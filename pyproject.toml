@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "promptguard"
+version = "0.1.0"
+description = ""
+authors = ["pangea.bruce.mccorkendale <bruce.mccorkendale@pangea.cloud>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.32.3"
+argparse = "^1.4.0"
+types-requests = "^2.32.0.20241016"
+pandas = "^2.2.3"
+pyarrow = "^18.0.0"
+psycopg2 = "^2.9.10"
+tzlocal = "^5.2"
+scikit-learn = "^1.5.2"
+huggingface-hub = "^0.26.5"
+boto3 = "^1.35.92"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
