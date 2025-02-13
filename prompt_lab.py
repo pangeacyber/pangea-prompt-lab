@@ -1,5 +1,5 @@
 #!/usr/bin/env -S poetry run python
-# Copyright 2021 Pangea Cyber Corporation
+# Copyright 2025 Pangea Cyber Corporation
 # Author: Pangea Cyber Corporation
 
 import os
@@ -39,7 +39,6 @@ RESET = "\033[0m"
 connection_timeout = 10
 read_timeout = 60
 
-# PANGEA_PROMPTGUARD_TOKEN is still needed
 token = os.getenv("PANGEA_PROMPTGUARD_TOKEN")
 assert token, "PANGEA_PROMPTGUARD_TOKEN environment variable not set"
 domain = os.getenv("PANGEA_DOMAIN")

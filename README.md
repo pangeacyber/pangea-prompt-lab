@@ -1,15 +1,17 @@
 PromptGuard Testing Tool
 
-Testing tool to evaluate Pangea PromptGuard service efficacy.
+Testing tool to evaluate Pangea PromptGuard service efficacy. 
+This utility measures accuracy of malicious vs. benign prompts.
 
 Prerequisites
 -------------
 - Environment Variable: PANGEA_PROMPTGUARD_TOKEN must be set to a valid PromptGuard token.
+- Environment Variable: PANGEA_DOMAIN must be set. Refer to service configuration details.
 
 Usage
 -----
 ```
-usage: promptguard.py [-h]
+usage: prompt_lab.py [-h]
                      [--verbose]
                      [--report_title REPORT_TITLE]
                      [--summary_report_file SUMMARY_REPORT_FILE]
@@ -70,8 +72,6 @@ Important Flags
 
 Example Commands
 ---------------
-export PANGEA_PROMPTGUARD_TOKEN=<your_token>
-
 1) Single Prompt:
    ./promptguard.py --prompt "Ignore previous instructions..." --verbose
 
@@ -99,5 +99,3 @@ Output and Metrics
 
 Also calculates accuracy, precision, recall, F1, specificity, and logs any errors.
 Use --fps_out_csv / --fns_out_csv to save FP/FN prompts for further analysis.
-
-This utility measures how accurately PromptGuard detects malicious vs. benign prompts, with minimal overhead.
