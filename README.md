@@ -30,6 +30,16 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       export PANGEA_DOMAIN="aws.us.pangea.cloud"
       export PANGEA_PROMPTGUARD_TOKEN="<default-token-value>"
       ```
+
+      _or_
+
+      Create a `.env` file:
+
+      ```bash
+      cp .env.example .env
+      ```
+
+      Populate it with the **Domain** and **Default Token** values from the service configuration details.
 - Install dependencies:
 
    ```bash

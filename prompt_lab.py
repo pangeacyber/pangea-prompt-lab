@@ -15,6 +15,9 @@ from tzlocal import get_localzone
 from collections import Counter, defaultdict
 from threading import Semaphore
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 # ANSI escape codes for colors
 GREEN = "\033[92m"
