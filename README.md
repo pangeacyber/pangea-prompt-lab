@@ -28,7 +28,7 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       Assign them to environment variables, for example:
       ```bash
       export PANGEA_DOMAIN="aws.us.pangea.cloud"
-      export PANGEA_PROMPTGUARD_TOKEN="<default-token-value>"
+      export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
       ```
 
       _or_
@@ -162,7 +162,7 @@ The sample dataset (`data/test_dataset.json`) contains:
 ## Example Report
 
 ```
---- PromptGuard Efficacy Report
+--- Prompt Guard Efficacy Report
 Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
 Input dataset: data/pangea_test_dataset.json
 

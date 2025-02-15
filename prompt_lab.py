@@ -42,8 +42,8 @@ RESET = "\033[0m"
 connection_timeout = 10
 read_timeout = 60
 
-token = os.getenv("PANGEA_PROMPTGUARD_TOKEN")
-assert token, "PANGEA_PROMPTGUARD_TOKEN environment variable not set"
+token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
+assert token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
 domain = os.getenv("PANGEA_DOMAIN")
 assert domain, "PANGEA_DOMAIN environment variable not set"
 
@@ -98,7 +98,7 @@ def get_duration(response, verbose=False):
 
 
 def pangea_post_api(endpoint, data):
-    """Call PromptGuard's public endpoint."""
+    """Call Prompt Guard's public endpoint."""
     try:
         base_url = f"https://prompt-guard.{domain}"
 
@@ -120,7 +120,7 @@ def pangea_post_api(endpoint, data):
 
 
 def pangea_get_api(endpoint):
-    """GET request to the PromptGuard public endpoint."""
+    """GET request to the Prompt Guard public endpoint."""
     try:
         base_url = f"https://prompt-guard.{domain}"
         url = f"{base_url}{endpoint}"
@@ -342,7 +342,7 @@ class PromptDetectionManager:
         self.false_positives.append(PromptDetection(prompt, detector, labels))
 
     def print_report_header(self):
-        print(f"\n{BRIGHT_GREEN}PromptGuard Efficacy Report{RESET}")
+        print(f"\n{BRIGHT_GREEN}Prompt Guard Efficacy Report{RESET}")
         if self.report_title:
             print(self.report_title)
 
@@ -364,7 +364,7 @@ class PromptDetectionManager:
             summary_report_csv = self.summary_report_file + ".csv"
             self.create_summary_csv(summary_report_csv)
             with open(self.summary_report_file, "w") as f:
-                f.write("PromptGuard Efficacy Report\n")
+                f.write("Prompt Guard Efficacy Report\n")
                 if self.report_title:
                     f.write(f"{self.report_title}\n")
                 f.write(f"Report generated at: {formatted_time}\n")
@@ -537,7 +537,7 @@ class PromptDetectionManager:
                 self.add_tn()
 
     def prompt_guard_analyzers(self):
-        """Fetch a list of detector names from the PromptGuard service."""
+        """Fetch a list of detector names from the Prompt Guard service."""
         endpoint = "/v1/detector/list"
         data = {}
         response = pangea_post_api(endpoint, data)
@@ -553,7 +553,7 @@ class PromptDetectionManager:
         return analyzers
 
     def prompt_guard_service(self, prompt):
-        """Submit a single prompt to the PromptGuard service."""
+        """Submit a single prompt to the Prompt Guard service."""
         endpoint = "/v1beta/guard"
         if self.analyzers_list:
             data = {"messages": [{"content": f"{prompt}", "role": "user"}], "analyzers": self.analyzers_list}
@@ -733,7 +733,7 @@ def process_all_prompts(args, pg):
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Process a prompt with PromptGuard API or read prompts from "
+            "Process a prompt with Prompt Guard API or read prompts from "
             "a txt (one per line), JSON (tps/tns), or CSV (SPML format)."
         )
     )
@@ -757,7 +757,7 @@ def main():
     group.add_argument(
         "--list_analyzers",
         action="store_true",
-        help="List available analyzers for the PromptGuard service and exit",
+        help="List available analyzers for the Prompt Guard service and exit",
     )
 
     parser.add_argument(
