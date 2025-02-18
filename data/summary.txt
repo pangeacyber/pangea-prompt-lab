@@ -1,4 +1,4 @@
-PromptGuard Efficacy Report
+Prompt Guard Efficacy Report
 Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
 Input dataset: data/pangea_test_dataset.json
 
