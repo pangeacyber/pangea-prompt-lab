@@ -11,6 +11,31 @@
 Testing tool to evaluate Pangea Prompt Guard service efficacy. 
 This utility measures accuracy of malicious vs. benign prompts.
 
+## Prompt Guard service efficacy report
+As of 02/18/2024, Pangea's Prompt Guard service (using the default settings) has been tested to have the following Efficacy on the test set included in this github repository:
+```
+--- PromptGuard Efficacy Report
+Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
+Input dataset: data/pangea_test_dataset.json
+
+Service: prompt-guard
+Analyzers: Project Config
+
+Total Calls: 447
+True Positives: 43
+True Negatives: 396
+False Positives: 4
+False Negatives: 4
+
+Accuracy: 0.9821
+Precision: 0.9149
+Recall: 0.9149
+F1 Score: 0.9149
+Specificity: 0.9900
+False Positive Rate: 0.0100
+False Negative Rate: 0.0851
+```
+
 ## Prerequisites
 - Install Poetry
 - Navigate to project directory
@@ -125,30 +150,6 @@ The sample dataset (`data/test_dataset.json`) contains:
 - **Size:** Small sample with ~50 prompts.
 - **Format:** JSON with `tps` (true positives) and `tns` (true negatives).
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
-
-## Example Report
-```
---- PromptGuard Efficacy Report
-Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
-Input dataset: data/pangea_test_dataset.json
-
-Service: prompt-guard
-Analyzers: Project Config
-
-Total Calls: 447
-True Positives: 43
-True Negatives: 396
-False Positives: 4
-False Negatives: 4
-
-Accuracy: 0.9821
-Precision: 0.9149
-Recall: 0.9149
-F1 Score: 0.9149
-Specificity: 0.9900
-False Positive Rate: 0.0100
-False Negative Rate: 0.0851
-```
 
 ## Output and Metrics
 - **True Positives (TP)**
