@@ -552,13 +552,19 @@ class PromptDetectionManager:
         print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
         return analyzers
 
-    def prompt_guard_service(self, prompt):
+    def prompt_guard_service(self, prompt, context):
         """Submit a single prompt to the Prompt Guard service."""
         endpoint = "/v1beta/guard"
-        if self.analyzers_list:
-            data = {"messages": [{"content": f"{prompt}", "role": "user"}], "analyzers": self.analyzers_list}
+        if not context:
+            if self.analyzers_list:
+                data = {"messages": [{"content": f"{prompt}", "role": "user"}], "analyzers": self.analyzers_list}
+            else:
+                data = {"messages": [{"content": f"{prompt}", "role": "user"}]}
         else:
-            data = {"messages": [{"content": f"{prompt}", "role": "user"}]}
+            if self.analyzers_list:
+                data = {"messages": [{"content": f"{prompt}", "role": "user"}, {"content": f"{context}", "role": "system"}], "analyzers": self.analyzers_list}
+            else:
+                data = {"messages": [{"content": f"{prompt}", "role": "user"}, {"content": f"{context}", "role": "system"}]}
 
         response = pangea_post_api(endpoint, data)
         if response.status_code == 202:
@@ -585,7 +591,7 @@ def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fns and len(pg.false_negatives) > 0:
         print("\nFalse Negatives:")
         for detection in pg.false_negatives:
-            print(f'"{detection.prompt}", "{detection.detector}"')
+            print(f'"{detection.prompt}"')
 
     pg.print_report_header()
     pg.print_errors()
@@ -603,7 +609,7 @@ def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fns and len(pg.false_negatives) > 0:
         print("\nFalse Negatives:")
         for detection in pg.false_negatives:
-            print(f'"{detection.prompt}", "{detection.detector}"')
+            print(f'"{detection.prompt}"')
 
     if args.fps_out_csv and len(pg.false_positives) > 0:
         print(f"Writing false positives to {fps_out_csv}")
@@ -627,12 +633,12 @@ def process_all_prompts(args, pg):
     semaphore = Semaphore(max_workers)
 
     @rate_limited(args.rps)
-    def process_prompt(prompt, is_injection, labels, index, total_rows):
+    def process_prompt(prompt, is_injection, labels, context, index, total_rows):
         with semaphore:
             progress = (index + 1) / total_rows * 100
             print("\r\033[2K", end="")
             print(f"{progress:.2f}%", end="\r", flush=True)
-            response = pg.prompt_guard_service(prompt)
+            response = pg.prompt_guard_service(prompt, context)
             if response.status_code != 200 and pg.verbose:
                 print_response(prompt, response)
             else:
@@ -660,9 +666,10 @@ def process_all_prompts(args, pg):
             if isinstance(data, list):
                 for item in data:
                     text = item["text"]
+                    context = item["context"]
                     labels = item.get("label", [])
                     inj = determine_injection(labels)
-                    prompts.append((text, inj, labels))
+                    prompts.append((text, inj, labels, context))
             else:
                 if not args.fp_check_only:
                     for element in data.get("tps", []):
@@ -673,8 +680,8 @@ def process_all_prompts(args, pg):
             total_rows = len(prompts)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
-                for index, (prompt, inj, labels) in enumerate(prompts):
-                    futures.append(executor.submit(process_prompt, prompt, inj, labels, index, total_rows))
+                for index, (prompt, inj, labels, context) in enumerate(prompts):
+                    futures.append(executor.submit(process_prompt, prompt, inj, labels, context, index, total_rows))
                 for future in as_completed(futures):
                     pass
 

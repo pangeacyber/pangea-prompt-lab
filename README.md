@@ -11,31 +11,6 @@
 Testing tool to evaluate Pangea Prompt Guard service efficacy.
 This utility measures the accuracy of detecting malicious versus benign prompts.
 
-## Prompt Guard service efficacy report
-As of 02/18/2024, Pangea's Prompt Guard service (using the default settings) has been tested to have the following Efficacy on the test set included in this github repository:
-```
---- PromptGuard Efficacy Report
-Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
-Input dataset: data/pangea_test_dataset.json
-
-Service: prompt-guard
-Analyzers: Project Config
-
-Total Calls: 447
-True Positives: 43
-True Negatives: 396
-False Positives: 4
-False Negatives: 4
-
-Accuracy: 0.9821
-Precision: 0.9149
-Recall: 0.9149
-F1 Score: 0.9149
-Specificity: 0.9900
-False Positive Rate: 0.0100
-False Negative Rate: 0.0851
-```
-
 ## Prerequisites
 
 - Python v3.10 or greater
