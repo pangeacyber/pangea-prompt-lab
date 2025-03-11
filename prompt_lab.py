@@ -47,6 +47,7 @@ assert token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
 domain = os.getenv("PANGEA_DOMAIN")
 assert domain, "PANGEA_DOMAIN environment variable not set"
 
+
 class Timer:
     def __enter__(self):
         self.start = time.perf_counter()
@@ -552,9 +553,18 @@ class PromptDetectionManager:
         print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
         return analyzers
 
-    def prompt_guard_service(self, prompt):
-        """Submit a single prompt to the Prompt Guard service."""
+    def prompt_guard_service(self, prompt, system_prompt="You're a helpful assistant."):
+        """
+        Insert a system prompt only if system_prompt is not None;
+        otherwise skip it, exactly like the original snippet.
+        """
         endpoint = "/v1beta/guard"
+
+        # Build the messages:
+        messages = [{"role": "user", "content": f"{prompt}"}]
+        if system_prompt is not None:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
         if self.analyzers_list:
             data = {"messages": [{"content": f"{prompt}", "role": "user"}], "analyzers": self.analyzers_list}
         else:
@@ -585,7 +595,7 @@ def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fns and len(pg.false_negatives) > 0:
         print("\nFalse Negatives:")
         for detection in pg.false_negatives:
-            print(f'"{detection.prompt}", "{detection.detector}"')
+            print(f'"{detection.prompt}"')
 
     pg.print_report_header()
     pg.print_errors()
@@ -603,7 +613,7 @@ def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fns and len(pg.false_negatives) > 0:
         print("\nFalse Negatives:")
         for detection in pg.false_negatives:
-            print(f'"{detection.prompt}", "{detection.detector}"')
+            print(f'"{detection.prompt}"')
 
     if args.fps_out_csv and len(pg.false_positives) > 0:
         print(f"Writing false positives to {fps_out_csv}")
@@ -626,13 +636,19 @@ def process_all_prompts(args, pg):
     max_workers = int(args.rps) if args.rps >= 1 else 1
     semaphore = Semaphore(max_workers)
 
+    # CHANGE #2: Decide if we pass a system prompt or None:
+    if args.no_system_prompt:
+        system_prompt = None
+    else:
+        system_prompt = args.system_prompt or "You're a helpful assistant."
+
     @rate_limited(args.rps)
     def process_prompt(prompt, is_injection, labels, index, total_rows):
         with semaphore:
             progress = (index + 1) / total_rows * 100
             print("\r\033[2K", end="")
             print(f"{progress:.2f}%", end="\r", flush=True)
-            response = pg.prompt_guard_service(prompt)
+            response = pg.prompt_guard_service(prompt, system_prompt=system_prompt)
             if response.status_code != 200 and pg.verbose:
                 print_response(prompt, response)
             else:
@@ -643,7 +659,7 @@ def process_all_prompts(args, pg):
 
     # Single prompt
     if args.prompt:
-        response = pg.prompt_guard_service(args.prompt)
+        response = pg.prompt_guard_service(args.prompt, system_prompt=system_prompt)
         print_response(args.prompt, response, True)
         return
 
@@ -736,6 +752,17 @@ def main():
             "Process a prompt with Prompt Guard API or read prompts from "
             "a txt (one per line), JSON (tps/tns), or CSV (SPML format)."
         )
+    )
+    parser.add_argument(
+        "--system_prompt",
+        type=str,
+        help="The system prompt to use for processing the prompt (default: You're a helpful assistant.)",
+        default="You're a helpful assistant.",
+    )
+    parser.add_argument(
+        "--no_system_prompt",
+        action="store_true",
+        help="Do not use a system prompt for processing the prompt"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
