@@ -1,20 +1,20 @@
 Prompt Guard Efficacy Report
-Report generated at: 2025-03-11 12:55:33 CST (UTC-0600)
-Input dataset: data/test_dataset.json
+Report generated at: 2025-02-13 17:54:29 CST (UTC-0600)
+Input dataset: data/pangea_test_dataset.json
+
 Service: prompt-guard
 Analyzers: Project Config
-Total Calls: 445
-Requests per second: 25.0
 
-True Positives: 41
-True Negatives: 400
-False Positives: 0
+Total Calls: 447
+True Positives: 43
+True Negatives: 396
+False Positives: 4
 False Negatives: 4
 
-Accuracy: 0.9910
-Precision: 1.0000
-Recall: 0.9111
-F1 Score: 0.9535
-Specificity: 1.0000
-False Positive Rate: 0.0000
-False Negative Rate: 0.0889
+Accuracy: 0.9821
+Precision: 0.9149
+Recall: 0.9149
+F1 Score: 0.9149
+Specificity: 0.9900
+False Positive Rate: 0.0100
+False Negative Rate: 0.0851
