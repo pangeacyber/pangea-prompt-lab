@@ -636,11 +636,10 @@ def process_all_prompts(args, pg):
     max_workers = int(args.rps) if args.rps >= 1 else 1
     semaphore = Semaphore(max_workers)
 
-    # CHANGE #2: Decide if we pass a system prompt or None:
     if args.no_system_prompt:
         system_prompt = None
     else:
-        system_prompt = args.system_prompt or "You're a helpful assistant."
+        system_prompt = args.system_prompt
 
     @rate_limited(args.rps)
     def process_prompt(prompt, is_injection, labels, index, total_rows):
