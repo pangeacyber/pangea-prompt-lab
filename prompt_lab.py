@@ -555,16 +555,27 @@ class PromptDetectionManager:
     def prompt_guard_service(self, prompt, context=""):
         """Submit a single prompt to the Prompt Guard service."""
         endpoint = "/v1beta/guard"
-        if not context:
+        if context:
             if self.analyzers_list:
-                data = {"messages": [{"content": f"{prompt}", "role": "user"}], "analyzers": self.analyzers_list}
+                data = {
+                    "messages": [
+                        {"content": context, "role": "system"},
+                        {"content": prompt, "role": "user"}
+                    ],
+                    "analyzers": self.analyzers_list
+                }
             else:
-                data = {"messages": [{"content": f"{prompt}", "role": "user"}]}
+                data = {
+                    "messages": [
+                        {"content": context, "role": "system"},
+                        {"content": prompt, "role": "user"}
+                    ]
+                }
         else:
             if self.analyzers_list:
-                data = {"messages": [{"content": f"{prompt}", "role": "user"}, {"content": f"{context}", "role": "system"}], "analyzers": self.analyzers_list}
+                data = {"messages": [{"content": prompt, "role": "user"}], "analyzers": self.analyzers_list}
             else:
-                data = {"messages": [{"content": f"{prompt}", "role": "user"}, {"content": f"{context}", "role": "system"}]}
+                data = {"messages": [{"content": prompt, "role": "user"}]}
 
         response = pangea_post_api(endpoint, data)
         if response.status_code == 202:
@@ -661,21 +672,23 @@ def process_all_prompts(args, pg):
         with open(input_file, "r") as file:
             data = json.load(file)
             prompts = []
-
-            # If it's an array of items with 'text'/'label'
-            if isinstance(data, list):
-                for item in data:
-                    text = item["user"]
-                    context = item["system"]
-                    labels = item.get("label", [])
-                    inj = determine_injection(labels)
-                    prompts.append((text, inj, labels, context))
+            if isinstance(data, dict) and "tests" in data:
+                for test_case in data["tests"]:
+                    messages = test_case.get("messages", [])
+                    labels = test_case.get("label", [])
+                    user_prompt = None
+                    context = None
+                    for message in messages:
+                        if message["role"] == "user":
+                            user_prompt = message["content"]
+                        elif message["role"] == "system":
+                            context = message["content"]
+                    if user_prompt:
+                        is_injection = determine_injection(labels)
+                        prompts.append((user_prompt, is_injection, labels, context))
             else:
-                if not args.fp_check_only:
-                    for element in data.get("tps", []):
-                        prompts.append((element, True, []))
-                for element in data.get("tns", []):
-                    prompts.append((element, False, []))
+                print("Error: JSON file format is not recognized.")
+                return
 
             total_rows = len(prompts)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
