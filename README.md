@@ -151,8 +151,7 @@ usage: poetry run python prompt_lab.py [-h]
 ## Sample Dataset
 
 The sample dataset (`data/test_dataset.json`) contains:
-- **Size:** Small sample with ~50 prompts.
-- **Format:** JSON with `tps` (true positives) and `tns` (true negatives).
+- **Size:** Small sample with ~450 prompts.
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
 
 ## Output and Metrics
