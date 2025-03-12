@@ -552,30 +552,13 @@ class PromptDetectionManager:
         print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
         return analyzers
 
-    def prompt_guard_service(self, prompt, context=""):
-        """Submit a single prompt to the Prompt Guard service."""
+    def prompt_guard_service(self, messages):
+        """Submit a single prompt to the Prompt Guard service using the full messages array."""
         endpoint = "/v1beta/guard"
-        if context:
-            if self.analyzers_list:
-                data = {
-                    "messages": [
-                        {"content": context, "role": "system"},
-                        {"content": prompt, "role": "user"}
-                    ],
-                    "analyzers": self.analyzers_list
-                }
-            else:
-                data = {
-                    "messages": [
-                        {"content": context, "role": "system"},
-                        {"content": prompt, "role": "user"}
-                    ]
-                }
+        if self.analyzers_list:
+            data = {"messages": messages, "analyzers": self.analyzers_list}
         else:
-            if self.analyzers_list:
-                data = {"messages": [{"content": prompt, "role": "user"}], "analyzers": self.analyzers_list}
-            else:
-                data = {"messages": [{"content": prompt, "role": "user"}]}
+            data = {"messages": messages}
 
         response = pangea_post_api(endpoint, data)
         if response.status_code == 202:
@@ -644,16 +627,18 @@ def process_all_prompts(args, pg):
     semaphore = Semaphore(max_workers)
 
     @rate_limited(args.rps)
-    def process_prompt(prompt, is_injection, labels, context, index, total_rows):
+    def process_prompt(messages, is_injection, labels, index, total_rows):
         with semaphore:
             progress = (index + 1) / total_rows * 100
             print("\r\033[2K", end="")
             print(f"{progress:.2f}%", end="\r", flush=True)
-            response = pg.prompt_guard_service(prompt, context)
+            response = pg.prompt_guard_service(messages)
+            # Use the first user message (if available) for logging
+            prompt_text = next((msg["content"] for msg in messages if msg["role"] == "user"), "No User Message")
             if response.status_code != 200 and pg.verbose:
-                print_response(prompt, response)
+                print_response(prompt_text, response)
             else:
-                pg.process_response(prompt, response, is_injection, labels)
+                pg.process_response(prompt_text, response, is_injection, labels)
 
     fns_out_csv = args.fns_out_csv
     fps_out_csv = args.fps_out_csv
@@ -671,30 +656,35 @@ def process_all_prompts(args, pg):
     if file_extension == ".json":
         with open(input_file, "r") as file:
             data = json.load(file)
-            prompts = []
+            test_cases = []
             if isinstance(data, dict) and "tests" in data:
                 for test_case in data["tests"]:
+                    # Retrieve the messages array as-is
                     messages = test_case.get("messages", [])
                     labels = test_case.get("label", [])
-                    user_prompt = None
-                    context = None
-                    for message in messages:
-                        if message["role"] == "user":
-                            user_prompt = message["content"]
-                        elif message["role"] == "system":
-                            context = message["content"]
-                    if user_prompt:
-                        is_injection = determine_injection(labels)
-                        prompts.append((user_prompt, is_injection, labels, context))
+                    test_cases.append((messages, labels))
+            elif isinstance(data, list):
+                # For old format: convert each item into a messages array.
+                for item in data:
+                    messages = []
+                    if "user" in item:
+                        messages.append({"role": "user", "content": item["user"]})
+                    if "system" in item:
+                        messages.append({"role": "system", "content": item["system"]})
+                    if "assistant" in item and item["assistant"]:
+                        messages.append({"role": "assistant", "content": item["assistant"]})
+                    labels = item.get("label", [])
+                    test_cases.append((messages, labels))
             else:
                 print("Error: JSON file format is not recognized.")
                 return
 
-            total_rows = len(prompts)
+            total_rows = len(test_cases)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
-                for index, (prompt, inj, labels, context) in enumerate(prompts):
-                    futures.append(executor.submit(process_prompt, prompt, inj, labels, context, index, total_rows))
+                for index, (messages, labels) in enumerate(test_cases):
+                    is_injection = determine_injection(labels)
+                    futures.append(executor.submit(process_prompt, messages, is_injection, labels, index, total_rows))
                 for future in as_completed(futures):
                     pass
 
