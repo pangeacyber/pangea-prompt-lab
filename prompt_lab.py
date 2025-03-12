@@ -665,8 +665,8 @@ def process_all_prompts(args, pg):
             # If it's an array of items with 'text'/'label'
             if isinstance(data, list):
                 for item in data:
-                    text = item["text"]
-                    context = item["context"]
+                    text = item["user"]
+                    context = item["system"]
                     labels = item.get("label", [])
                     inj = determine_injection(labels)
                     prompts.append((text, inj, labels, context))
