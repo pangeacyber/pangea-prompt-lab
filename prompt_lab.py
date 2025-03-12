@@ -552,7 +552,7 @@ class PromptDetectionManager:
         print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
         return analyzers
 
-    def prompt_guard_service(self, prompt, context):
+    def prompt_guard_service(self, prompt, context=""):
         """Submit a single prompt to the Prompt Guard service."""
         endpoint = "/v1beta/guard"
         if not context:
