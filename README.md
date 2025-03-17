@@ -6,7 +6,6 @@
 
 [![documentation](https://img.shields.io/badge/documentation-pangea-blue?style=for-the-badge&labelColor=551B76)](https://pangea.cloud/docs/prompt-guard/)
 
-[Discourse]: https://community.pangea.cloud
 Testing tool to evaluate Pangea Prompt Guard service efficacy.
 This utility measures the accuracy of detecting malicious versus benign prompts.
 
