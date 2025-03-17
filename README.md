@@ -5,7 +5,6 @@
 <br />
 
 [![documentation](https://img.shields.io/badge/documentation-pangea-blue?style=for-the-badge&labelColor=551B76)](https://pangea.cloud/docs/prompt-guard/)
-[![Discourse](https://img.shields.io/badge/Discourse-4A154B?style=for-the-badge&logo=discourse&logoColor=white)][Discourse]
 
 [Discourse]: https://community.pangea.cloud
 Testing tool to evaluate Pangea Prompt Guard service efficacy.
