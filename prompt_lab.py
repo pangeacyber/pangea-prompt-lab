@@ -1,8 +1,10 @@
 #!/usr/bin/env -S poetry run python
 # Copyright 2025 Pangea Cyber Corporation
 # Author: Pangea Cyber Corporation
+from urllib.parse import urljoin
 
 import os
+import sys
 import time
 import requests
 from requests.models import Response
@@ -44,8 +46,9 @@ read_timeout = 60
 
 token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
 assert token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
-domain = os.getenv("PANGEA_DOMAIN")
-assert domain, "PANGEA_DOMAIN environment variable not set"
+
+base_url = os.getenv("PANGEA_BASE_URL")
+assert base_url, "PANGEA_BASE_URL environment variable not set"
 
 class Timer:
     def __enter__(self):
@@ -100,10 +103,8 @@ def get_duration(response, verbose=False):
 def pangea_post_api(endpoint, data):
     """Call Prompt Guard's public endpoint."""
     try:
-        base_url = f"https://prompt-guard.{domain}"
-
-        url = f"{base_url}{endpoint}"
-
+        global base_url
+        url = urljoin(base_url, endpoint)
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -122,8 +123,8 @@ def pangea_post_api(endpoint, data):
 def pangea_get_api(endpoint):
     """GET request to the Prompt Guard public endpoint."""
     try:
-        base_url = f"https://prompt-guard.{domain}"
-        url = f"{base_url}{endpoint}"
+        global base_url
+        url = urljoin(base_url, endpoint)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
         response = requests.get(url, headers=headers, timeout=(connection_timeout, read_timeout))
@@ -351,6 +352,7 @@ class PromptDetectionManager:
         local_time = datetime.now(local_tz)
         formatted_time = local_time.strftime("%Y-%m-%d %H:%M:%S %Z (UTC%z)")
         print(f"Report generated at: {formatted_time}")
+        print(f"CMD: {' '.join(sys.argv)}")
         print(f"Input dataset: {self.report_file_name}")
         print("Service: prompt-guard")
         if self.analyzers_list:
@@ -371,6 +373,7 @@ class PromptDetectionManager:
                 f.write(f"Report generated at: {formatted_time}\n")
                 f.write(f"Input dataset: {os.path.basename(self.report_file_name)}\n")
                 f.write("Service: prompt-guard\n")
+                f.write(f"CMD: {' '.join(sys.argv)}\n")
                 f.write(f"Total Calls: {self.total_calls}\n")
                 f.write(f"Requests per second: {self.rps}\n")
                 f.write(f"Errors: {self.errors}\n")
@@ -402,6 +405,7 @@ class PromptDetectionManager:
         headers = [
             "Date-Time",
             "Description",
+            "CMD",
             "Input Dataset",
             "Service",
             "Analyzers",
@@ -429,6 +433,7 @@ class PromptDetectionManager:
 
         data["Date-Time"] = formatted_time
         data["Description"] = self.report_title if self.report_title else None
+        data["CMD"] = " ".join(sys.argv)
         data["Input Dataset"] = os.path.basename(self.input_file) if self.input_file else None
         data["Service"] = "prompt-guard"
         data["Analyzers"] = self.analyzers_list if self.analyzers_list else "Project Config"
@@ -542,16 +547,22 @@ class PromptDetectionManager:
         endpoint = "/v1/detector/list"
         data = {}
         response = pangea_post_api(endpoint, data)
-        if response.status_code != 200:
-            print(f"Error fetching analyzers: {response.status_code}")
+        try:
+            if response.status_code != 200:
+                print(f"Error fetching analyzers: {response.status_code}")
+                print(json.dumps(response.json(), indent=4))
+                return []
+            resp_json = response.json()
+            analyzers_data = resp_json.get("result", {}).get("analyzers")
+            if not isinstance(analyzers_data, list):
+                print("Unexpected format in response: 'analyzers' missing or not a list.")
+                return []
+            analyzers = [analyzer.get("name", "<missing name>") for analyzer in analyzers_data]
+            print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
+            return analyzers
+        except Exception as e:
+            print(f"Exception while fetching analyzers: {e}")
             return []
-        resp_json = response.json()
-        if "result" not in resp_json or "analyzers" not in resp_json["result"]:
-            print("No 'result.analyzers' found in response JSON.")
-            return []
-        analyzers = [analyzer["name"] for analyzer in resp_json["result"]["analyzers"]]
-        print(f"Fetched {len(analyzers)} analyzers: {analyzers}")
-        return analyzers
 
     def prompt_guard_service(self, messages):
         """Submit a single prompt to the Prompt Guard service using the full messages array."""

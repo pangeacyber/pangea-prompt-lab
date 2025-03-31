@@ -15,17 +15,17 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
 - Poetry v1.x or greater
 - Pangea's Prompt Guard:
    1. Sign up for a free [Pangea account](https://pangea.cloud/signup).
-   1. After creating your account and first project, skip the wizards. This will take you to the Pangea User Console, where you can enable the service.
-   1. Click Prompt Guard in the left-hand sidebar.
-   1. In the service enablement dialogs, click **Next**, then **Done**.
-   1. Click **Finish** to go to the service page in the Pangea User Console.
-   1. On the **Overview** page, capture the following **Configuration Details** by clicking on the corresponding values:
-      - **Domain** - Identifies the cloud provider and is shared across all services in a Pangea project.
+   2. After creating your account and first project, skip the wizards. This will take you to the Pangea User Console, where you can enable the service.
+   3. Click Prompt Guard in the left-hand sidebar.
+   4. In the service enablement dialogs, click **Next**, then **Done**.
+   5. Click **Finish** to go to the service page in the Pangea User Console.
+   6. On the **Overview** page, capture the following **Configuration Details** by clicking on the corresponding values:
+      - **Base URL** - The full base URL for Prompt Guard (e.g. "https://prompt-guard.aws.us.pangea.cloud"). This must be set using the `PANGEA_BASE_URL` environment variable.
       - **Default Token** - API access token for the service endpoints.
 
       Assign them to environment variables, for example:
       ```bash
-      export PANGEA_DOMAIN="aws.us.pangea.cloud"
+      export PANGEA_BASE_URL="http://localhost:8080/v1/guard"  # or use SaaS instead ex: https://prompt-guard.aws.us.pangea.cloud/v1/guard
       export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
       ```
 
@@ -37,7 +37,7 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       cp .env.example .env
       ```
 
-      Populate it with the **Domain** and **Default Token** values from the service configuration details.
+      Populate it with the **Base URL** and **Default Token** values from the service configuration details.
 - Install dependencies:
 
    ```bash
@@ -160,7 +160,3 @@ The sample dataset (`data/test_dataset.json`) contains:
 - **False Negatives (FN)**
 
 It also calculates accuracy, precision, recall, F1-score, and specificity, and logs any errors. Use `--fps_out_csv` / `--fns_out_csv` to save FP/FN prompts for further analysis.
-
-## Edge deployments testing
-To test local Edge deployments, refer to the following documentation for the required tool changes:  
-https://pangea.cloud/docs/deployment-models/edge/deployments/aws#test-prompt-guard-efficacy
