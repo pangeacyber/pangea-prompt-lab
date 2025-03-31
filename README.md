@@ -165,4 +165,4 @@ It also calculates accuracy, precision, recall, F1-score, and specificity, and l
 
 ## Edge deployments testing
 To test local Edge deployments, refer to the following documentation for the required tool changes:  
-https://dev.pangea.cloud/docs/deployment-models/edge/deployments/aws#test-prompt-guard-efficacy
+https://pangea.cloud/docs/deployment-models/edge/deployments/aws#test-prompt-guard-efficacy
