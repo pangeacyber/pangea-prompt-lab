@@ -203,8 +203,9 @@ def count_lines(filename):
 
 def determine_injection(labels):
     """Heuristic to decide if this is injection or not based on labels."""
-    benign_labels = {"benign_auto", "benign"}
-    return not any(label in benign_labels for label in labels)
+    benign_labels = "benign"
+
+    return not any(benign_labels in label for label in labels)
 
 
 def remove_outer_quotes(s: str) -> str:
