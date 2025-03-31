@@ -160,3 +160,7 @@ The sample dataset (`data/test_dataset.json`) contains:
 - **False Negatives (FN)**
 
 It also calculates accuracy, precision, recall, F1-score, and specificity, and logs any errors. Use `--fps_out_csv` / `--fns_out_csv` to save FP/FN prompts for further analysis.
+
+## Edge deployments testing
+To test local Edge deployments, refer to the following documentation for the required tool changes:  
+https://pangea.cloud/docs/deployment-models/edge/deployments/aws#test-prompt-guard-efficacy
