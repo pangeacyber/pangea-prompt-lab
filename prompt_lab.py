@@ -48,11 +48,7 @@ token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
 assert token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
 
 base_url = os.getenv("PANGEA_BASE_URL")
-
-if not base_url:
-    domain = os.getenv("PANGEA_DOMAIN")
-    assert domain, "PANGEA_DOMAIN or PANGEA_BASE_URL environment variable not set"
-    base_url = f"https://prompt-guard.{domain}"
+assert base_url, "PANGEA_BASE_URL environment variable not set"
 
 class Timer:
     def __enter__(self):
@@ -108,8 +104,7 @@ def pangea_post_api(endpoint, data):
     """Call Prompt Guard's public endpoint."""
     try:
         global base_url
-
-        url = endpoint if endpoint.startswith("http://") or endpoint.startswith("https://") else urljoin(base_url, endpoint)
+        url = urljoin(base_url, endpoint)
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -129,7 +124,7 @@ def pangea_get_api(endpoint):
     """GET request to the Prompt Guard public endpoint."""
     try:
         global base_url
-        url = endpoint if endpoint.startswith("http://") or endpoint.startswith("https://") else urljoin(base_url, endpoint)
+        url = urljoin(base_url, endpoint)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
         response = requests.get(url, headers=headers, timeout=(connection_timeout, read_timeout))

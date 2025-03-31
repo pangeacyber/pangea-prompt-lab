@@ -17,17 +17,17 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
 - Poetry v1.x or greater
 - Pangea's Prompt Guard:
    1. Sign up for a free [Pangea account](https://pangea.cloud/signup).
-   1. After creating your account and first project, skip the wizards. This will take you to the Pangea User Console, where you can enable the service.
-   1. Click Prompt Guard in the left-hand sidebar.
-   1. In the service enablement dialogs, click **Next**, then **Done**.
-   1. Click **Finish** to go to the service page in the Pangea User Console.
-   1. On the **Overview** page, capture the following **Configuration Details** by clicking on the corresponding values:
-      - **Domain or Base URL** - Domain identifies the cloud provider (e.g. "aws.us.pangea.cloud"), or optionally, set a full base URL (e.g. "http://localhost:8080") for testing local deployments.
+   2. After creating your account and first project, skip the wizards. This will take you to the Pangea User Console, where you can enable the service.
+   3. Click Prompt Guard in the left-hand sidebar.
+   4. In the service enablement dialogs, click **Next**, then **Done**.
+   5. Click **Finish** to go to the service page in the Pangea User Console.
+   6. On the **Overview** page, capture the following **Configuration Details** by clicking on the corresponding values:
+      - **Base URL** - The full base URL for Prompt Guard (e.g. "https://prompt-guard.aws.us.pangea.cloud"). This must be set using the `PANGEA_BASE_URL` environment variable.
       - **Default Token** - API access token for the service endpoints.
 
       Assign them to environment variables, for example:
       ```bash
-      export PANGEA_BASE_URL="http://localhost:8080"  # or use SaaS instead ex: https://prompt-guard.aws.us.pangea.cloud/v1beta/guard
+      export PANGEA_BASE_URL="http://localhost:8080/v1/guard"  # or use SaaS instead ex: https://prompt-guard.aws.us.pangea.cloud/v1/guard
       export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
       ```
 
@@ -39,7 +39,7 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       cp .env.example .env
       ```
 
-      Populate it with the **Domain** and **Default Token** values from the service configuration details.
+      Populate it with the **Base URL** and **Default Token** values from the service configuration details.
 - Install dependencies:
 
    ```bash
