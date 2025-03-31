@@ -23,9 +23,10 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       - **Base URL** - The full base URL for Prompt Guard (e.g. "https://prompt-guard.aws.us.pangea.cloud"). This must be set using the `PANGEA_BASE_URL` environment variable.
       - **Default Token** - API access token for the service endpoints.
 
-      Assign them to environment variables, for example:
+      Assign these values to environment variables, for example:
+
       ```bash
-      export PANGEA_BASE_URL="http://localhost:8080/v1/guard"  # or use SaaS instead ex: https://prompt-guard.aws.us.pangea.cloud/v1/guard
+      export PANGEA_BASE_URL="https://prompt-guard.<domain>"
       export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
       ```
 
@@ -37,7 +38,10 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       cp .env.example .env
       ```
 
-      Populate it with the **Base URL** and **Default Token** values from the service configuration details.
+      Then populate it using the **Domain** and **Default Token** values from the service configuration.
+
+      > Use your project **Domain** value as part of the base URL. Including the full base URL allows this tool to work with custom deployments, including those accessed locally via port forwarding.
+
 - Install dependencies:
 
    ```bash
@@ -160,3 +164,7 @@ The sample dataset (`data/test_dataset.json`) contains:
 - **False Negatives (FN)**
 
 It also calculates accuracy, precision, recall, F1-score, and specificity, and logs any errors. Use `--fps_out_csv` / `--fns_out_csv` to save FP/FN prompts for further analysis.
+
+## Edge deployments testing
+
+To test Edge deployments, refer to the [Pangea Edge services](https://pangea.cloud/docs/deployment-models/edge/deployments/docker#test-prompt-guard-efficacy) documentation.

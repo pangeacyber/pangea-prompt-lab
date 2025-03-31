@@ -103,7 +103,6 @@ def get_duration(response, verbose=False):
 def pangea_post_api(endpoint, data):
     """Call Prompt Guard's public endpoint."""
     try:
-        global base_url
         url = urljoin(base_url, endpoint)
         headers = {
             "Authorization": f"Bearer {token}",
@@ -123,7 +122,6 @@ def pangea_post_api(endpoint, data):
 def pangea_get_api(endpoint):
     """GET request to the Prompt Guard public endpoint."""
     try:
-        global base_url
         url = urljoin(base_url, endpoint)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -145,7 +143,7 @@ def poll_request(request_id, max_attempts=10, verbose=False):
     status_code = "Accepted"
     counter = 1
     if verbose:
-        print(f"\nPolling for response using URL: https://prompt-guard.pangea.cloud/request/{request_id}")
+        print(f"\nPolling for response using URL: {base_url}/request/{request_id}")
     while status_code == "Accepted":
         response = pangea_request(request_id)
         if response is None:
