@@ -22,12 +22,12 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
    1. In the service enablement dialogs, click **Next**, then **Done**.
    1. Click **Finish** to go to the service page in the Pangea User Console.
    1. On the **Overview** page, capture the following **Configuration Details** by clicking on the corresponding values:
-      - **Domain** - Identifies the cloud provider and is shared across all services in a Pangea project.
+      - **Domain or Base URL** - Domain identifies the cloud provider (e.g. "aws.us.pangea.cloud"), or optionally, set a full base URL (e.g. "http://localhost:8080") for testing local deployments.
       - **Default Token** - API access token for the service endpoints.
 
       Assign them to environment variables, for example:
       ```bash
-      export PANGEA_DOMAIN="aws.us.pangea.cloud"
+      export PANGEA_BASE_URL="http://localhost:8080"  # or use SaaS instead ex: https://prompt-guard.aws.us.pangea.cloud/v1beta/guard
       export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
       ```
 
@@ -162,7 +162,3 @@ The sample dataset (`data/test_dataset.json`) contains:
 - **False Negatives (FN)**
 
 It also calculates accuracy, precision, recall, F1-score, and specificity, and logs any errors. Use `--fps_out_csv` / `--fns_out_csv` to save FP/FN prompts for further analysis.
-
-## Edge deployments testing
-To test local Edge deployments, refer to the following documentation for the required tool changes:  
-https://pangea.cloud/docs/deployment-models/edge/deployments/aws#test-prompt-guard-efficacy
