@@ -555,7 +555,7 @@ class PromptDetectionManager:
 
     def prompt_guard_service(self, messages):
         """Submit a single prompt to the Prompt Guard service using the full messages array."""
-        endpoint = "/v1beta/guard"
+        endpoint = "/v1/guard"
         if self.analyzers_list:
             data = {"messages": messages, "analyzers": self.analyzers_list}
         else:
