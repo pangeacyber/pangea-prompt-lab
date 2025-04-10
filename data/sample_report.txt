@@ -1,20 +1,24 @@
 Prompt Guard Efficacy Report
-Report generated at: 2025-03-11 14:29:17 CST (UTC-0600)
+Report generated at: 2025-04-09 23:48:04 CST (UTC-0600)
+CMD: prompt_lab.py --input_file data/test_dataset.json --rps 25 --summary_report_file test_04-01-test-dataset.txt --fps_out_csv test_dataset_full.fps.csv --fns_out_csv test_dataset_full.fns.csv --assume_tps --print_label_stats --analyzers PA4002,PA3002,PA3003
 Input dataset: data/test_dataset.json
 Service: prompt-guard
-Analyzers: Project Config
-Total Calls: 445
+Analyzers: ['PA4002', 'PA3002', 'PA3003']
+Total Calls: 457
 Requests per second: 25.0
 
-True Positives: 42
-True Negatives: 400
+Errors: Counter()
+
+True Positives: 53
+True Negatives: 401
 False Positives: 0
 False Negatives: 3
 
-Accuracy: 0.9933
+Accuracy: 0.9934
 Precision: 1.0000
-Recall: 0.9333
-F1 Score: 0.9655
+Recall: 0.9464
+F1 Score: 0.9725
 Specificity: 1.0000
 False Positive Rate: 0.0000
-False Negative Rate: 0.0667
+False Negative Rate: 0.0536
+Average duration: 0.1021 seconds
