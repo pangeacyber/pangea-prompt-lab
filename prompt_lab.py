@@ -698,6 +698,41 @@ def process_all_prompts(args, pg):
                 for future in as_completed(futures):
                     pass
 
+    elif file_extension == ".txt":
+        # --------------------------------------------------------------
+        # Plain‑text input: one prompt per line
+        # --------------------------------------------------------------
+        total_rows = count_lines(input_file)
+
+        # Decide the default injection assumption.
+        if args.assume_tps:
+            default_injection = True
+        elif args.assume_tns:
+            default_injection = False
+        else:
+            default_injection = False
+
+        with open(input_file, "r", encoding="utf-8") as file, ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            idx = 0
+            for raw_line in file:
+                prompt = raw_line.strip()
+                if not prompt:
+                    continue
+                futures.append(
+                    executor.submit(
+                        process_prompt,
+                        [{"role": "user", "content": prompt}],  # messages array
+                        default_injection,  # is_injection
+                        [],                 # labels
+                        idx,
+                        total_rows,
+                    )
+                )
+                idx += 1
+            for future in as_completed(futures):
+                pass
+
     elif file_extension == ".csv":
         with open(input_file, mode="r", newline="", encoding="utf-8") as csvfile:
             total_rows = sum(1 for _ in csv.reader(csvfile)) - 1
