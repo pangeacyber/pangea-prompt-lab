@@ -722,9 +722,9 @@ def process_all_prompts(args, pg):
                 futures.append(
                     executor.submit(
                         process_prompt,
-                        prompt,            # messages (string)
-                        default_injection, # is_injection
-                        [],                # labels
+                        [{"role": "user", "content": prompt}],  # messages array
+                        default_injection,  # is_injection
+                        [],                 # labels
                         idx,
                         total_rows,
                     )
