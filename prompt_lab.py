@@ -655,7 +655,7 @@ def process_all_prompts(args, pg):
 
     # Single prompt
     if args.prompt:
-        response = pg.prompt_guard_service(args.prompt)
+        response = pg.prompt_guard_service([{"role": "user", "content": args.prompt}])
         print_response(args.prompt, response, True)
         return
 
