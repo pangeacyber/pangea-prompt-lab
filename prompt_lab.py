@@ -202,9 +202,13 @@ def count_lines(filename):
 
 def determine_injection(labels):
     """Heuristic to decide if this is injection or not based on labels."""
-    benign_labels = "benign"
+    benign_substrings = ["benign_auto", "benign"]
+    benign_exact = ["conform"]
 
-    return not any(benign_labels in label for label in labels)
+    for label in labels:
+        if any(substring in label for substring in benign_substrings) or label in benign_exact:
+            return False
+    return True
 
 
 def remove_outer_quotes(s: str) -> str:
@@ -697,6 +701,44 @@ def process_all_prompts(args, pg):
                     futures.append(executor.submit(process_prompt, messages, is_injection, labels, index, total_rows))
                 for future in as_completed(futures):
                     pass
+
+    elif file_extension == ".jsonl":
+        # --------------------------------------------------------------
+        # JSON Lines input: one JSON object per line
+        # --------------------------------------------------------------
+        test_cases = []
+        with open(input_file, "r", encoding="utf-8") as file:
+            for i, line in enumerate(file, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    print(f"Skipping invalid JSON line {i}: {line}")
+                    continue
+                messages = data.get("messages", [])
+                labels = data.get("label", [])
+                test_cases.append((messages, labels))
+        print(f"Loaded {len(test_cases)} test cases from input file.")
+
+        total_rows = len(test_cases)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for index, (messages, labels) in enumerate(test_cases):
+                is_injection = determine_injection(labels)
+                futures.append(
+                    executor.submit(
+                        process_prompt,
+                        messages,
+                        is_injection,
+                        labels,
+                        index,
+                        total_rows,
+                    )
+                )
+            for future in as_completed(futures):
+                pass
 
     elif file_extension == ".txt":
         # --------------------------------------------------------------
