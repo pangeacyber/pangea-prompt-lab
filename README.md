@@ -9,6 +9,8 @@
 Testing tool to evaluate Pangea Prompt Guard service efficacy.
 This utility measures the accuracy of detecting malicious versus benign prompts.
 
+**Please be aware that the test dataset for prompt injection has been updated. It now includes only malicious prompts — i.e., direct prompt injection, indirect prompt injection, and jailbreak prompts. We have removed prompts related to self-harm, violence, profanity, and other such unacceptable categories, as these are not classified as "malicious" prompts. To effectively prevent such unwanted prompts on your AI application, we recommend enabling the relevant detectors within the AI Guard service.**
+
 ## Prerequisites
 
 - Python v3.10 or greater
@@ -73,7 +75,7 @@ usage: poetry run python prompt_lab.py [-h]
 1) **Single Prompt** (e.g. `--prompt "Hello, world!"`)
    - Processes a single prompt and prints the result.
 
-2) **Input File** (e.g. `--input_file data/test_dataset.json`)
+2) **Input File** (e.g. `--input_file data/test_dataset.jsonl`)
    - Processes multiple prompts from a file.
    - Supported formats:
      - `.txt`: One prompt per line
@@ -127,7 +129,7 @@ usage: poetry run python prompt_lab.py [-h]
 
 2) **JSON File (tps/tns):**
    ```bash
-   poetry run python prompt_lab.py --input_file data/test_dataset.json --verbose --rps 16
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --verbose --rps 16
    ```
 
 3) **Text File (All True Positives):**
@@ -152,7 +154,7 @@ usage: poetry run python prompt_lab.py [-h]
 
 ## Sample Dataset
 
-The sample dataset (`data/test_dataset.json`) contains:
+The sample dataset (`data/test_dataset.jsonl`) contains:
 - **Size:** Small sample with ~450 prompts.
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
 
