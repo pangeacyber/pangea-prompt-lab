@@ -44,8 +44,10 @@ RESET = "\033[0m"
 connection_timeout = 10
 read_timeout = 60
 
-token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
-assert token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
+prompt_guard_token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
+assert prompt_guard_token, "PANGEA_PROMPT_GUARD_TOKEN environment variable not set"
+
+ai_guard_token = os.getenv("PANGEA_AI_GUARD_TOKEN")
 
 base_url = os.getenv("PANGEA_BASE_URL")
 assert base_url, "PANGEA_BASE_URL environment variable not set"
@@ -100,7 +102,7 @@ def get_duration(response, verbose=False):
         return 0
 
 
-def pangea_post_api(endpoint, data):
+def pangea_post_api(endpoint, data, token=prompt_guard_token):
     """Call Prompt Guard's public endpoint."""
     try:
         url = urljoin(base_url, endpoint)
@@ -108,6 +110,8 @@ def pangea_post_api(endpoint, data):
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
+
+        # print(f"pangea_post_api POST {url} with data: {json.dumps(data, indent=4)}")
 
         response = requests.post(url, headers=headers, json=data, timeout=(connection_timeout, read_timeout))
         if response is None:
@@ -119,11 +123,11 @@ def pangea_post_api(endpoint, data):
         return create_error_response(400, f"Bad Request: {e}")
 
 
-def pangea_get_api(endpoint):
+def pangea_get_api(endpoint, token=prompt_guard_token):
     """GET request to the Prompt Guard public endpoint."""
     try:
         url = urljoin(base_url, endpoint)
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {prompt_guard_token}", "Content-Type": "application/json"}
 
         response = requests.get(url, headers=headers, timeout=(connection_timeout, read_timeout))
         return response
@@ -133,19 +137,19 @@ def pangea_get_api(endpoint):
         return create_error_response(400, f"Bad Request: {e}")
 
 
-def pangea_request(request_id):
+def pangea_request(request_id, token=prompt_guard_token):
     endpoint = f"/request/{request_id}"
-    return pangea_get_api(endpoint)
+    return pangea_get_api(endpoint, token=token)
 
 
-def poll_request(request_id, max_attempts=10, verbose=False):
+def poll_request(request_id, max_attempts=10, verbose=False, token=prompt_guard_token):
     """Poll status until 'Success' or non-202 result, or max attempts reached."""
     status_code = "Accepted"
     counter = 1
     if verbose:
         print(f"\nPolling for response using URL: {base_url}/request/{request_id}")
     while status_code == "Accepted":
-        response = pangea_request(request_id)
+        response = pangea_request(request_id, token=token)
         if response is None:
             if verbose:
                 print(f"\n{DARK_YELLOW}poll_request failed with no response.{RESET}")
@@ -248,6 +252,9 @@ class PromptDetectionManager:
         self,
         rps,
         report_file_name,
+        args,
+        prompt_guard_token=None,
+        ai_guard_token=None,
         max_poll_attempts=10,
         verbose=False,
         report_title=None,
@@ -256,7 +263,10 @@ class PromptDetectionManager:
         assume_tps=False,
         assume_tns=False,
         analyzers_list=None,
+        use_ai_guard=False,
+        topics=None,         
     ):
+        self.args = args # Should switch to using this to make it easier to pass around
         self.rps = rps
         self.max_poll_attempts = max_poll_attempts
         self.verbose = verbose
@@ -267,6 +277,10 @@ class PromptDetectionManager:
         self.assume_tps = assume_tps
         self.assume_tns = assume_tns
         self.analyzers_list = analyzers_list
+        self.use_ai_guard = use_ai_guard
+        self.topics = topics
+        self.prompt_guard_token = prompt_guard_token
+        self.ai_guard_token = ai_guard_token
 
         self.tp_count = 0
         self.tn_count = 0
@@ -356,7 +370,10 @@ class PromptDetectionManager:
         print(f"Report generated at: {formatted_time}")
         print(f"CMD: {' '.join(sys.argv)}")
         print(f"Input dataset: {self.report_file_name}")
-        print("Service: prompt-guard")
+        if self.use_ai_guard:
+            print("Service: ai-guard")
+        else:
+            print("Service: prompt-guard")
         if self.analyzers_list:
             print(f"Analyzers: {self.analyzers_list}")
         else:
@@ -511,22 +528,138 @@ class PromptDetectionManager:
             self.label_counts[label] += 1
         self._process_prompt_guard_response(prompt, response, is_injection, labels)
 
+    def get_ai_guard_detected_details(self, response):
+        detected = False
+        detectors = []  # List of detectors that detected something
+        detected_with_details = defaultdict(list)
+
+        try:
+            if response is None:
+                print(f"{DARK_YELLOW}Service failed with no response.{RESET}")
+                return detected, detectors, detected_with_details
+
+            if response.status_code != 200:
+                if self.verbose:
+                    print(f"Error in check_result: {response.status_code}")
+                return detected, detectors, detected_with_details
+
+            # Safely parse JSON, handle possible exceptions
+            try:
+                resp_json = response.json()
+            except Exception as e:
+                print(f"{DARK_RED}Failed to parse response JSON: {e}{RESET}")
+                return detected, detectors, detected_with_details
+
+            if (
+                isinstance(resp_json, dict)
+                and "result" in resp_json
+                and "detectors" in resp_json["result"]
+            ):
+                for detector, details in resp_json["result"]["detectors"].items():
+                    if details.get("detected", False):
+                        detected = True
+                        detectors.append(detector)
+                        # Handle prompt_injection separately to extract analyzer and confidence
+                        if detector == "prompt_injection":
+                            for analyzer_response in details["data"].get(
+                                "analyzer_responses", []
+                            ):
+                                analyzer = analyzer_response.get(
+                                    "analyzer", "Unknown"
+                                )
+                                confidence = analyzer_response.get(
+                                    "confidence", "Unknown"
+                                )
+                                detected_with_details[detector].append(
+                                    f"analyzer: {analyzer}, confidence: {confidence}"
+                                )
+                                detectors.append(analyzer)
+                        elif detector == "malicious_entity":
+                            entities = details["data"].get("entities", [])
+                            for entity in entities:
+                                entity_str = (
+                                    f"{entity['type']}: {entity['value']}"
+                                )
+                                if "action" in entity:
+                                    entity_str += (
+                                        f" (action: {entity['action']})"
+                                    )
+                                detected_with_details[detector].append(
+                                    entity_str
+                                )
+                                detectors.append(entity["type"])
+                        elif detector == "topic":
+                            topics = details["data"].get("topics", [])
+                            for topic in topics:
+                                topic_name = topic.get("topic")
+                                if topic_name:
+                                    detected_with_details[detector].append(
+                                        topic_name
+                                    )
+                                    detectors.append(topic_name)
+                        elif detector == "language_detection":
+                            language = details["data"].get("language")
+                            if language:
+                                detected_with_details[detector].append(
+                                    language
+                                )
+                                detectors.append(language)
+                        elif detector == "code_detection":
+                            language = details["data"].get("language")
+                            if language:
+                                detected_with_details[detector].append(
+                                    language
+                                )
+                                detectors.append(language)
+                        else:
+                            # For other detectors, just append the data as a string
+                            detected_with_details[detector].append(
+                                str(details["data"])
+                            )
+                            detectors.append(str(details["data"]))
+            else:
+                if self.verbose:
+                    print(
+                        "Unexpected response format: "
+                        f"{json.dumps(resp_json, indent=4)}"
+                    )
+        except Exception as e:
+            if self.verbose:
+                print(f"Error in get_ai_guard_detected_details: {e}")
+                try:
+                    print(
+                        f"Response: {json.dumps(response.json(), indent=4)}"
+                    )
+                except Exception:
+                    print(f"Response: {response}")
+
+        return detected, detectors, detected_with_details
+
     def _process_prompt_guard_response(self, prompt, response, is_injection, labels):
         if response.status_code != 200:
             if self.verbose:
                 print(f"Error in check_result: {response.status_code}")
             return
 
+        detected = False
+        detectors = []
         result = response.json().get("result", {})
-        detected = result.get("detected", False)
-        detector = result.get("analyzer", "None")
+
+        if self.use_ai_guard:
+            detected, detectors, _ = self.get_ai_guard_detected_details(response)
+            if not detected:
+                detectors = ["None"]
+        else:        
+            detected = result.get("detected", False)
+            detectors.append(result.get("analyzer", "None"))
 
         if is_injection:
             if detected:
                 self.add_tp()
             else:
                 self.add_fn()
-                self.add_false_negative(prompt, detector, labels)
+                for detector in detectors:
+                    self.add_false_negative(prompt, detector, labels)
                 if self.verbose:
                     print(f"\n{DARK_RED}FALSE NEGATIVE: prompt: {prompt}")
                     print(f"{json.dumps(result, indent=4)}\n{RESET}")
@@ -535,7 +668,8 @@ class PromptDetectionManager:
         else:
             if detected:
                 self.add_fp()
-                self.add_false_positive(prompt, detector, labels)
+                for detector in detectors:
+                    self.add_false_positive(prompt, detector, labels)
                 if self.verbose:
                     print(f"\n{DARK_YELLOW}FALSE POSITIVE: {prompt}")
                     print(f"{json.dumps(result, indent=4)}\n{RESET}")
@@ -543,6 +677,7 @@ class PromptDetectionManager:
                     self.label_stats[label]["FP"] += 1
             else:
                 self.add_tn()
+ 
 
     def prompt_guard_analyzers(self):
         """Fetch a list of detector names from the Prompt Guard service."""
@@ -587,8 +722,58 @@ class PromptDetectionManager:
         if response.status_code != 200:
             self.add_error_response(response)
         return response
+    
+    def ai_guard_service(
+            self, 
+            messages, 
+            topics=[
+                "Toxicity",
+                "Self-harm and violence",
+                "Roleplay",
+                "Weapons",
+                "Criminal conduct",
+                "Sexual"
+            ]):
+        """
+        Submit a single prompt to the AI Guard service using the full messages array.
+        The recipe can be specified, defaulting to "pangea_prompt_guard".
+        """
+        endpoint = "/v1/text/guard"
+        overrides = {
+            "ignore_recipe": True,
+            "prompt_injection": {
+                "disabled": False,
+                "action": "block"
+            },
+            "topic": {
+                "disabled": False,
+                "action": "block",
+                "threshold": 0.5,
+                "topics": topics
+            }
+        }
+        data = {
+            "recipe": "pangea_prompt_guard",
+            "messages": messages,
+            "overrides": overrides,
+            "debug": self.verbose,
+        }
 
+        response = pangea_post_api(endpoint, data, self.ai_guard_token)
+        if response.status_code == 202:
+            print(f"\n{DARK_BLUE}Polling for AI Guard response...{RESET}")
+            request_id = response.json()["request_id"]
+            _, response = poll_request(request_id, max_attempts=self.max_poll_attempts, verbose=self.verbose, token=self.ai_guard_token)
 
+        duration = get_duration(response, verbose=self.verbose)
+        if duration > 0:
+            self.add_total_calls()
+            self.add_duration(duration)
+
+        if response.status_code != 200:
+            self.add_error_response(response)
+        return response
+    
 def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fps and len(pg.false_positives) > 0:
         print("\nFalse Positives:")
@@ -646,7 +831,10 @@ def process_all_prompts(args, pg):
             progress = (index + 1) / total_rows * 100
             print("\r\033[2K", end="")
             print(f"{progress:.2f}%", end="\r", flush=True)
-            response = pg.prompt_guard_service(messages)
+            if pg.use_ai_guard:
+                response = pg.ai_guard_service(messages)
+            else:
+                response = pg.prompt_guard_service(messages)
             # Use the first user message (if available) for logging
             prompt_text = next((msg["content"] for msg in messages if msg["role"] == "user"), "No User Message")
             if response.status_code != 200 and pg.verbose:
@@ -659,7 +847,10 @@ def process_all_prompts(args, pg):
 
     # Single prompt
     if args.prompt:
-        response = pg.prompt_guard_service([{"role": "user", "content": args.prompt}])
+        if args.use_ai_guard:
+            response = pg.ai_guard_service([{"role": "user", "content": args.prompt}])
+        else:
+            response = pg.prompt_guard_service([{"role": "user", "content": args.prompt}])
         print_response(args.prompt, response, True)
         return
 
@@ -828,6 +1019,7 @@ def process_all_prompts(args, pg):
 
 
 def main():
+    global base_url
     parser = argparse.ArgumentParser(
         description=(
             "Process a prompt with Prompt Guard API or read prompts from "
@@ -898,11 +1090,31 @@ def main():
         help="Display per-label stats (FP/FN counts)",
     )
 
+    parser.add_argument(
+        "--use_ai_guard",
+        action="store_true",
+        help=(
+            "Use AI Guard service instead of Prompt Guard. "
+            "This will use the AI Guard recipe with default topics: "
+            "Toxicity, Self-harm and violence, Roleplay, Weapons, Criminal conduct, Sexual."
+        ),
+    )
+    parser.add_argument(
+        "--topics",
+        type=str,
+        default="Toxicity,Self-harm and violence,Roleplay,Weapons,Criminal conduct,Sexual",
+        help=(
+            "Comma-separated list of topics to use with AI Guard. "
+            "Default: 'Toxicity,Self-harm and violence,Roleplay,Weapons,Criminal conduct,Sexual'."
+        ),
+    )
+
     args = parser.parse_args()
 
     # If listing analyzers, just fetch and exit
     if args.list_analyzers:
         temp_pg = PromptDetectionManager(
+            args=args,
             rps=1.0,
             report_file_name="",
             max_poll_attempts=10,
@@ -912,7 +1124,48 @@ def main():
 
     analyzers_list = args.analyzers.split(",") if args.analyzers else None
 
+    if args.use_ai_guard:
+        if ai_guard_token is None:
+            print(
+                f"{DARK_RED}Error: --use_ai_guard requires the AI Guard token to be set in the environment variable PANGAEA_AI_GUARD_TOKEN.{RESET}"
+            )
+            return
+        # Need to modify base_url to use AI Guard.
+        # If base_url contains "prompt-guard", replace it with "ai-guard".
+        if base_url and "prompt-guard" in base_url:
+            base_url = base_url.replace("prompt-guard", "ai-guard")
+            print(f"Using AI Guard base URL: {base_url}")
+        else:
+            if base_url and "ai-guard" not in base_url:
+                print(
+                    f"{DARK_RED}Warning: --use_ai_guard is set, but base_url does not contain 'ai-guard'. "
+                    "Ensure you are using the correct AI Guard endpoint.{RESET}"
+                )
+        
+        if analyzers_list:
+            print(
+                f"{DARK_RED}Warning: --analyzers is ignored when using --use_ai_guard. "
+                "AI Guard uses its own set of topics and analyzers.{RESET}"
+            )
+            analyzers_list = None
+
+    topics = (
+        args.topics.split(",") if args.use_ai_guard and args.topics else None
+    )  # Use provided topics or default if not specified
+    if args.use_ai_guard and not topics:
+        topics = [
+            "Toxicity",
+            "Self-harm and violence",
+            "Roleplay",
+            "Weapons",
+            "Criminal conduct",
+            "Sexual"
+        ]
+
     pg = PromptDetectionManager(
+        prompt_guard_token=prompt_guard_token,
+        ai_guard_token=ai_guard_token,
+        args=args,
         rps=args.rps,
         report_file_name=args.input_file,
         max_poll_attempts=args.max_poll_attempts,
@@ -923,6 +1176,8 @@ def main():
         assume_tps=args.assume_tps,
         assume_tns=args.assume_tns,
         analyzers_list=analyzers_list,
+        use_ai_guard=args.use_ai_guard,
+        topics=topics, 
     )
 
     process_all_prompts(args, pg)
