@@ -1095,7 +1095,7 @@ def main():
         action="store_true",
         help=(
             "Use AI Guard service instead of Prompt Guard. "
-            "This will use the AI Guard recipe with default topics: "
+            "This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: "
             "Toxicity, Self-harm and violence, Roleplay, Weapons, Criminal conduct, Sexual."
         ),
     )
