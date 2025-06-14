@@ -727,12 +727,12 @@ class PromptDetectionManager:
             self, 
             messages, 
             topics=[
-                "Toxicity",
-                "Self-harm and violence",
-                "Roleplay",
-                "Weapons",
-                "Criminal conduct",
-                "Sexual"
+                "toxicity",
+                "self-harm and violence",
+                "roleplay",
+                "weapons",
+                "criminal conduct",
+                "sexual"
             ]):
         """
         Submit a single prompt to the AI Guard service using the full messages array.
@@ -759,6 +759,8 @@ class PromptDetectionManager:
             "debug": self.verbose,
         }
 
+        if self.verbose:
+            print(f"\n{DARK_BLUE}Sending AI Guard request with data: {json.dumps(data, indent=4)}{RESET}")
         response = pangea_post_api(endpoint, data, self.ai_guard_token)
         if response.status_code == 202:
             print(f"\n{DARK_BLUE}Polling for AI Guard response...{RESET}")
@@ -1096,16 +1098,16 @@ def main():
         help=(
             "Use AI Guard service instead of Prompt Guard. "
             "This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: "
-            "Toxicity, Self-harm and violence, Roleplay, Weapons, Criminal conduct, Sexual."
+            "toxicity, self-harm and violence, roleplay, weapons, criminal conduct, sexual."
         ),
     )
     parser.add_argument(
         "--topics",
         type=str,
-        default="Toxicity,Self-harm and violence,Roleplay,Weapons,Criminal conduct,Sexual",
+        default="toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual",
         help=(
             "Comma-separated list of topics to use with AI Guard. "
-            "Default: 'Toxicity,Self-harm and violence,Roleplay,Weapons,Criminal conduct,Sexual'."
+            "Default: 'toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual'."
         ),
     )
 
