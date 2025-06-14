@@ -759,8 +759,9 @@ class PromptDetectionManager:
             "debug": self.verbose,
         }
 
-        if self.verbose:
-            print(f"\n{DARK_BLUE}Sending AI Guard request with data: {json.dumps(data, indent=4)}{RESET}")
+        # if self.verbose:
+        #     print(f"\n{DARK_BLUE}Sending AI Guard request with data: {json.dumps(data, indent=4)}{RESET}")
+
         response = pangea_post_api(endpoint, data, self.ai_guard_token)
         if response.status_code == 202:
             print(f"\n{DARK_BLUE}Polling for AI Guard response...{RESET}")
