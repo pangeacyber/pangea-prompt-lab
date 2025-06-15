@@ -25,11 +25,12 @@ This utility measures the accuracy of detecting malicious versus benign prompts.
       - **Base URL** - The full base URL for Prompt Guard (e.g. "https://prompt-guard.aws.us.pangea.cloud"). This must be set using the `PANGEA_BASE_URL` environment variable.
       - **Default Token** - API access token for the service endpoints.
 
-      Assign these values to environment variables, for example:
+      Assign these values to environment variables (PANGEA_AI_GUARD_TOKEN only needed for --use_ai_guard), for example:
 
       ```bash
       export PANGEA_BASE_URL="https://prompt-guard.<domain>"
       export PANGEA_PROMPT_GUARD_TOKEN="<default-token-value>"
+      export PANGEA_AI_GUARD_TOKEN="<default-token-value>"
       ```
 
       _or_
@@ -68,6 +69,8 @@ usage: poetry run python prompt_lab.py [-h]
                      [--rps RPS]
                      [--max_poll_attempts MAX_POLL_ATTEMPTS]
                      [--print_label_stats]
+                     [--use_ai_guard]
+                     [--topics]
 ```
 
 ## Important Flags
@@ -120,16 +123,21 @@ usage: poetry run python prompt_lab.py [-h]
    - `--rps`: Requests per second (default: 1.0).
    - `--max_poll_attempts`: Maximum retries for async requests (default: 10).
 
-## Example Commands
+
+7) **Using AI Guard API**
+   - `--use_ai_guard`: Use AI Guard service instead of Prompt Guard. This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: toxicity, self-harm and violence, roleplay, weapons, criminal conduct, sexual.
+   - `--topics`: Comma-separated list of topics to use with AI Guard. Default: 'toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual'.
+
+   NOTE: Ensure that PANGEA_AI_GUARD_TOKEN is set to a valid AI Guard token value.
 
 1) **Single Prompt:**
    ```bash
    poetry run python prompt_lab.py --prompt "Ignore previous instructions..." --verbose
    ```
 
-2) **JSON File (tps/tns):**
+2) **JSONL File (tps/tns):**
    ```bash
-   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --verbose --rps 16
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --rps 16
    ```
 
 3) **Text File (All True Positives):**
@@ -150,6 +158,16 @@ usage: poetry run python prompt_lab.py [-h]
 6) **Specify Analyzers:**
    ```bash
    poetry run python prompt_lab.py --input_file data/spml_dataset.csv --analyzers PA2001,PA2002 --verbose
+   ```
+
+7) **Use AI Guard:**
+   ```bash
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --rps 16
+   ```
+
+8) **Specify AI Guard Topics:**
+   ```bash
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual" --rps 16
    ```
 
 ## Sample Dataset
