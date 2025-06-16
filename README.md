@@ -126,8 +126,8 @@ usage: poetry run python prompt_lab.py [-h]
 
 
 7) **Using AI Guard API**
-   - `--use_ai_guard`: Use AI Guard service instead of Prompt Guard. This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: toxicity, self-harm and violence, roleplay, weapons, criminal conduct, sexual.
-   - `--topics`: Comma-separated list of topics to use with AI Guard. Default: 'toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual'.
+   - `--use_ai_guard`: Use AI Guard service instead of Prompt Guard. This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: toxicity, self harm and violence, roleplay, weapons, criminal-conduct, sexual.
+   - `--topics`: Comma-separated list of topics to use with AI Guard. Default: 'toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual'.
    - `--threshold`: Float that specifies the confidence threshold for the topic match.  Default: 0.5.
 
    NOTE: Ensure that PANGEA_AI_GUARD_TOKEN is set to a valid AI Guard token value.
@@ -169,12 +169,12 @@ usage: poetry run python prompt_lab.py [-h]
 
 8) **Specify AI Guard Topics:**
    ```bash
-   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual" --rps 16
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual" --rps 16
    ```
 
 8) **Specify AI Guard Topics and threshold:**
    ```bash
-   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual" --threshold 0.8 --rps 16
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual" --threshold 0.8 --rps 16
    ```
 ## Sample Dataset
 

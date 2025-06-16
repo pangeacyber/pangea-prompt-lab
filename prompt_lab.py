@@ -755,10 +755,10 @@ class PromptDetectionManager:
             else:
                 topics=[
                     "toxicity",
-                    "self-harm and violence",
+                    "self harm and violence",
                     "roleplay",
                     "weapons",
-                    "criminal conduct",
+                    "criminal-conduct",
                     "sexual"
                 ]
         # Topics have to be lowercased:
@@ -1129,16 +1129,18 @@ def main():
         help=(
             "Use AI Guard service instead of Prompt Guard. "
             "This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: "
-            "toxicity, self-harm and violence, roleplay, weapons, criminal conduct, sexual."
+            "toxicity, self harm and violence, roleplay, weapons, criminal-conduct, sexual."
         ),
     )
     parser.add_argument(
         "--topics",
         type=str,
-        default="toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual",
+        default="toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual",
         help=(
             "Comma-separated list of topics to use with AI Guard. "
-            "Default: 'toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual'."
+            "Available topics: "
+            "'toxicity, self harm and violence, roleplay, weapons, criminal-conduct, sexual, financial-advice, legal-advice, religion, politics, health-coverage, negative-sentiment, gibberish'.  "
+            "Default: 'toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual'"
         ),
     )
 
@@ -1193,15 +1195,15 @@ def main():
             analyzers_list = None
 
     topics = (
-        args.topics.split(",") if args.use_ai_guard and args.topics else None
+        [t.strip().lower() for t in args.topics.split(",")] if args.use_ai_guard and args.topics else None
     )  # Use provided topics or default if not specified
     if args.use_ai_guard and not topics:
         topics = [
             "toxicity",
-            "self-harm and violence",
+            "self harm and violence",
             "roleplay",
             "weapons",
-            "criminal conduct",
+            "criminal-conduct",
             "sexual"
         ]
 
