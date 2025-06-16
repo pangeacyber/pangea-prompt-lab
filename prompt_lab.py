@@ -264,7 +264,8 @@ class PromptDetectionManager:
         assume_tns=False,
         analyzers_list=None,
         use_ai_guard=False,
-        topics=None,         
+        topics=None,        
+        threshold=0.5, 
     ):
         self.args = args # Should switch to using this to make it easier to pass around
         self.rps = rps
@@ -279,6 +280,7 @@ class PromptDetectionManager:
         self.analyzers_list = analyzers_list
         self.use_ai_guard = use_ai_guard
         self.topics = topics
+        self.threshold = threshold
         self.prompt_guard_token = prompt_guard_token
         self.ai_guard_token = ai_guard_token
 
@@ -745,7 +747,9 @@ class PromptDetectionManager:
                 "weapons",
                 "criminal conduct",
                 "sexual"
-            ]):
+            ],
+            threshold=0.5
+            ):
         """
         Submit a single prompt to the AI Guard service using the full messages array.
         The recipe can be specified, defaulting to "pangea_prompt_guard".
@@ -760,7 +764,7 @@ class PromptDetectionManager:
             "topic": {
                 "disabled": False,
                 "action": "block",
-                "threshold": 0.5,
+                "threshold": threshold,
                 "topics": topics
             }
         }
@@ -1124,6 +1128,16 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "Threshold for topic detection confidence. "
+            "Only applies when using AI Guard with topics. Default: 0.5."
+        ),
+    )
+
     args = parser.parse_args()
 
     # If listing analyzers, just fetch and exit
@@ -1193,6 +1207,7 @@ def main():
         analyzers_list=analyzers_list,
         use_ai_guard=args.use_ai_guard,
         topics=topics, 
+        threshold=args.threshold,
     )
 
     process_all_prompts(args, pg)
