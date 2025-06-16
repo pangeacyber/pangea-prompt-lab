@@ -127,7 +127,7 @@ def pangea_get_api(endpoint, token=prompt_guard_token):
     """GET request to the Prompt Guard public endpoint."""
     try:
         url = urljoin(base_url, endpoint)
-        headers = {"Authorization": f"Bearer {prompt_guard_token}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
         response = requests.get(url, headers=headers, timeout=(connection_timeout, read_timeout))
         return response
@@ -1026,7 +1026,13 @@ def process_all_prompts(args, pg):
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
                 for index, (prompt, is_injection, _) in enumerate(prompts):
-                    futures.append(executor.submit(process_prompt, prompt, is_injection, [], index, total_rows))
+                    futures.append(executor.submit(
+                        process_prompt, 
+                        [{"role": "user", "content": prompt}],  # messages array
+                        is_injection, 
+                        [],     # labels
+                        index, 
+                        total_rows))
                 for future in as_completed(futures):
                     pass
 
