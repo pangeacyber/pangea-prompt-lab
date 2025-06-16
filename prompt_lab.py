@@ -1026,7 +1026,13 @@ def process_all_prompts(args, pg):
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
                 for index, (prompt, is_injection, _) in enumerate(prompts):
-                    futures.append(executor.submit(process_prompt, prompt, is_injection, [], index, total_rows))
+                    futures.append(executor.submit(
+                        process_prompt, 
+                        [{"role": "user", "content": prompt}],  # messages array
+                        is_injection, 
+                        [],     # labels
+                        index, 
+                        total_rows))
                 for future in as_completed(futures):
                     pass
 
