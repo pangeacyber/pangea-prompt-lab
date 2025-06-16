@@ -643,12 +643,24 @@ class PromptDetectionManager:
 
         detected = False
         detectors = []
+        detected_with_details = defaultdict(list)
         result = response.json().get("result", {})
 
         if self.use_ai_guard:
-            detected, detectors, _ = self.get_ai_guard_detected_details(response)
+            detected, detectors, detected_with_details = self.get_ai_guard_detected_details(response)
             if not detected:
                 detectors = ["None"]
+            else:
+                temp_detectors = []
+                for detector, details in detected_with_details.items():
+                    if isinstance(details, list):
+                        details_str = ", ".join(details)
+                    else:
+                        details_str = str(details)
+                    temp_detectors.append(f"{detector}: {details_str}")
+                if len(temp_detectors) == 0:
+                    temp_detectors = ["None"]
+                detectors = temp_detectors
         else:        
             detected = result.get("detected", False)
             detectors.append(result.get("analyzer", "None"))
@@ -1137,7 +1149,7 @@ def main():
         # If base_url contains "prompt-guard", replace it with "ai-guard".
         if base_url and "prompt-guard" in base_url:
             base_url = base_url.replace("prompt-guard", "ai-guard")
-            print(f"Using AI Guard base URL: {base_url}")
+            # print(f"Using AI Guard base URL: {base_url}")
         else:
             if base_url and "ai-guard" not in base_url:
                 print(
