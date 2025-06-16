@@ -71,6 +71,7 @@ usage: poetry run python prompt_lab.py [-h]
                      [--print_label_stats]
                      [--use_ai_guard]
                      [--topics]
+                     [--threshold]
 ```
 
 ## Important Flags
@@ -170,6 +171,10 @@ usage: poetry run python prompt_lab.py [-h]
    poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual" --rps 16
    ```
 
+8) **Specify AI Guard Topics and threshold:**
+   ```bash
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self-harm and violence,roleplay,weapons,criminal conduct,sexual" --threshold 0.8 --rps 16
+   ```
 ## Sample Dataset
 
 The sample dataset (`data/test_dataset.jsonl`) contains:
