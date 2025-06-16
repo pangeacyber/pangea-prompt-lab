@@ -265,7 +265,7 @@ class PromptDetectionManager:
         analyzers_list=None,
         use_ai_guard=False,
         topics=None,        
-        threshold=0.5, 
+        threshold=None, 
     ):
         self.args = args # Should switch to using this to make it easier to pass around
         self.rps = rps
@@ -740,21 +740,35 @@ class PromptDetectionManager:
     def ai_guard_service(
             self, 
             messages, 
-            topics=[
-                "toxicity",
-                "self-harm and violence",
-                "roleplay",
-                "weapons",
-                "criminal conduct",
-                "sexual"
-            ],
-            threshold=0.5
+            topics=None, 
+            threshold=None
             ):
         """
         Submit a single prompt to the AI Guard service using the full messages array.
         The recipe can be specified, defaulting to "pangea_prompt_guard".
         """
         endpoint = "/v1/text/guard"
+
+        if not topics:
+            if self.topics:
+                topics = self.topics
+            else:
+                topics=[
+                    "toxicity",
+                    "self-harm and violence",
+                    "roleplay",
+                    "weapons",
+                    "criminal conduct",
+                    "sexual"
+                ]
+        # Topics have to be lowercased:
+        topics = [topic.lower() for topic in topics]
+        if not threshold:
+            if self.threshold:
+                threshold = self.threshold
+            else:
+                threshold=0.5
+
         overrides = {
             "ignore_recipe": True,
             "prompt_injection": {
@@ -1183,12 +1197,12 @@ def main():
     )  # Use provided topics or default if not specified
     if args.use_ai_guard and not topics:
         topics = [
-            "Toxicity",
-            "Self-harm and violence",
-            "Roleplay",
-            "Weapons",
-            "Criminal conduct",
-            "Sexual"
+            "toxicity",
+            "self-harm and violence",
+            "roleplay",
+            "weapons",
+            "criminal conduct",
+            "sexual"
         ]
 
     pg = PromptDetectionManager(
