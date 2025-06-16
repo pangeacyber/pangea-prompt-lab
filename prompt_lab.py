@@ -127,7 +127,7 @@ def pangea_get_api(endpoint, token=prompt_guard_token):
     """GET request to the Prompt Guard public endpoint."""
     try:
         url = urljoin(base_url, endpoint)
-        headers = {"Authorization": f"Bearer {prompt_guard_token}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
         response = requests.get(url, headers=headers, timeout=(connection_timeout, read_timeout))
         return response
