@@ -41,7 +41,7 @@ CYAN = "\033[96m"
 
 RESET = "\033[0m"
 
-connection_timeout = 10
+connection_timeout = 12
 read_timeout = 60
 
 prompt_guard_token = os.getenv("PANGEA_PROMPT_GUARD_TOKEN")
