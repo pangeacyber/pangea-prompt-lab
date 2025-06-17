@@ -128,7 +128,7 @@ usage: poetry run python prompt_lab.py [-h]
 7) **Using AI Guard API**
    - `--use_ai_guard`: Use AI Guard service instead of Prompt Guard. This will use the AI Guard API with a forced recipe of malicious prompt and topic detectors with default topics: toxicity, self harm and violence, roleplay, weapons, criminal-conduct, sexual.
    - `--topics`: Comma-separated list of topics to use with AI Guard. Default: 'toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual'.
-   - `--threshold`: Float that specifies the confidence threshold for the topic match.  Default: 0.5.
+   - `--threshold`: Float that specifies the confidence threshold for the topic match.  Default: 1.0.
 
    NOTE: Ensure that PANGEA_AI_GUARD_TOKEN is set to a valid AI Guard token value.
 

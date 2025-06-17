@@ -767,7 +767,7 @@ class PromptDetectionManager:
             if self.threshold:
                 threshold = self.threshold
             else:
-                threshold=0.5
+                threshold=1.0
 
         overrides = {
             "ignore_recipe": True,
@@ -1153,10 +1153,10 @@ def main():
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
+        default=1.0,
         help=(
             "Threshold for topic detection confidence. "
-            "Only applies when using AI Guard with topics. Default: 0.5."
+            "Only applies when using AI Guard with topics. Default: 1.0"
         ),
     )
 
