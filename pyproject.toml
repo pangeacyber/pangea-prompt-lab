@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "aiguard-lab"
+version = "0.1.0"
+description = "AI Guard Lab - A tool for testing AI Guardrails"
+authors = ["pangea.bruce.mccorkendale <bruce.mccorkendale@pangea.cloud>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.32.3"
+argparse = "^1.4.0"
+tzlocal = "^5.2"
+pydantic = "^2.10.6"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
