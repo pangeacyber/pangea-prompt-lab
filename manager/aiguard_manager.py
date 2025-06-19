@@ -32,6 +32,7 @@ from utils.utils import (
     rate_limited,
 )
 from utils.colors import DARK_RED, DARK_YELLOW, DARK_GREEN, RESET, DARK_BLUE
+from defaults import defaults
 
 
 class EfficacyTracker:
@@ -51,92 +52,70 @@ class EfficacyTracker:
     def update(
             self,
             expected_labels: List[str], 
-            expected: ExpectedDetectors, 
-            actual: dict):
+            detected_detectors_labels: List[str],
+            benign_labels: List[str] = ["benign", "benign_auto", "conforming"], # TODO: get this from a global or config
+            malicious_prompt_labels: List[str] = ["malicious-prompt", "injection", "jailbreak"], # TODO: get this from a global or config
+            ):
         """
         Update efficacy statistics by comparing expected and actual detector results.
-
         Return FP_DETECTED, FN_DETECTED, FP_NAMES, FN_NAMES
 
-        Rules:
-        - For each detector in the union of expected and actual:
-            - If a detector is missing in `expected`, treat as "detected": false.
-            - If a detector is missing in `actual`, treat as "detected": false.
-            - Count as True Positive (TP) if both expected and actual are
-              "detected": true, and actual's data is a superset of expected's data.
-            - Count as True Negative (TN) if both expected and actual are
-              "detected": false.
-            - Count as False Negative (FN) if expected is "detected": true and
-              actual is "detected": false.
-            - Count as False Positive (FP) if expected is "detected": false and
-              actual is "detected": true.
-            - Count as a False Negatie (FN) if expected is "detected": true and
-              actual is "detected": false.
-        - If `expected` is empty, any actual detection is a false positive.
-        - If `actual` is empty, any expected detection is a false negative.
-        - If the only difference is in the "data" field, it is considered a match
-          if actual's data is a superset of expected's data.
-        - If the "data" field is not a superset, it is considered a false positive
-          (but ignore any fields called "confidence").
+        (ignore block vs report, and only apply malicious_prompt_labels and benign_labels to malicious-prompt detector):
+        Label on a test case means a detector or topic of that name is expected as a TP
+            Consider any label in malicious_prompt_labels to be synonyms of “malicious-prompt”
+                Replace any test.labels that match something in the malicious_prompt_labels with “malicious-prompt”
+                Remove any duplicates from test.labels
+            Failure to see a detection matching that label is a FN
+            Seeing a detection that doesn’t match a label on the test case is a FP
 
-        actual structure example:
-        "detectors": {
-            "code_detection": {
-                "detected": false,
-                "data": null
-            },
-            "prompt_injection": {
-                "detected": true,
-                "data": {
-                    "action": "reported",
-                    "analyzer_responses": [
-                        {
-                            "analyzer": "PA4003",
-                            "confidence": 1.0
-                        }
-                    ]
-                }
-            }
-        }
+        Logic: 
+            detected_detectors_labels = AIG(test)
+            Expected_labels = test.labels
+            Expected_labels = apply_synonyms(test.labels, malicious_prompt_labels)
+            For each expected in expected_labels:
+                If expected in detected_detectors_labels:
+                    TP(expected)
+                Else:
+                    FN(expected)
+            For each detected in detected_detectors_labels:
+                If not detected in expected_labels:
+                    FP(detected)
 
-        expected structure example:
-        "expected_detectors" : {
-            "prompt_injection": {
-                "detected": true,
-                "data": {
-                    "action": "reported",
-                    "analyzer_responses": [
-                        {
-                            "analyzer": "PA4003",
-                            "confidence": 1.0
-                        }
-                    ]
-                }
-            }
-        }
+        How do benign_labels come in?  
+            If any of the benign_labels are in expected_labels, then 
+                If “malicious-prompt” in detected_detectors_labels
+                    FP(“malicious-prompt”)
 
-        "expected_detectors": {
-        "topic": {
-            "detected": true,
-            "threshold": 0.5,
-            "data": {
-            "topics": [
-                {
-                "topic": "negative-sentiment",
-                "confidence": 1.0
-                }
-            ],
-            "action": "reported"
-            }
-        }
-        }
+
+        Benign and malicious labels only apply to the results of malicious prompt detection.
+        We can't have a both a benign and a malicious prompt label in the same test.
+        If we do, then we should just use the malicious prompt label and report an warning/error.
+        TODO:
+        Do we want to allow benign labels to be used for topic detection to indicate the same as 
+        "no topic detected"?
+
+        TODO:
+        We need to ensure that nothing passed for use as a benign_label or a malicious_prompt_label
+        matches one of our other detector or topic labels (e.g. toxicity, self-harm-and-violence, etc.)
+        This should be done when we receive the command line arguments, so we can validate.
+
         """
 
-        # self.total_calls += 1 # This is handled in AIGuardManager
+        # Normalize inputs to lists of strings
+        expected_labels = expected_labels or []
+        detected_detectors_labels = detected_detectors_labels or []
+        expected_labels = [str(label) for label in expected_labels]
+        detected_detectors_labels = [
+            str(det) for det in detected_detectors_labels
+        ]
+
+        # self.total_calls += 1 # This is handled in AIGuardManager        
 
         # Initialize return values
         fp_detected = False
         fn_detected = False
+        tp_detected = False
+        tn_detected = False
         fp_names: list[str] = []
         fn_names: list[str] = []
 
@@ -146,75 +125,61 @@ class EfficacyTracker:
         found_tp = set()
         found_tn = set()
 
-        # Both expected and actual may contain detectors with "detected": false;
-        # these should be treated as if the detector is absent.
-        if not expected:
-            # No detectors expected. Any actual detections are false positives.
-            for detector, actual_data in actual.items():
-                if actual_data.get("detected", False):
-                    found_fp.add(detector)
-                    self.per_detector_fp[detector] += 1
-                else:
-                    found_tn.add(detector)
-                    self.per_detector_tn[detector] += 1
-            if found_fp:
-                self.fp_count += 1
-                fp_detected = True
-                fp_names.extend(found_fp)
-            elif found_tn:
-                self.tn_count += 1
-            return (fp_detected, fn_detected, fp_names, fn_names)
+        def apply_synonyms(labels: List[str], synonyms: List[str], replacement: str) -> List[str]:
+            """
+            Replace any label in labels that matches a synonym in synonyms with the specified replacement.
+            Remove duplicates from the resulting list.
+            """
+            return list(set([replacement if label in synonyms else label for label in labels]))
+        
+        # Apply synonyms to expected_labels for "malicious-prompt"
+        expected_labels = apply_synonyms(expected_labels, malicious_prompt_labels, "malicious-prompt")
 
-        if not actual:
-            # No actual detections. Any expected detections are false negatives.
-            for detector, expected_data in expected.items():
-                if expected_data.get("detected", False):
-                    found_fn.add(detector)
-                    self.per_detector_fn[detector] += 1
-                else:
-                    found_tn.add(detector)
-                    self.per_detector_tn[detector] += 1
-            if found_fn:
-                self.fn_count += 1
-                fn_detected = True
-                fn_names.extend(found_fn)
-            elif found_tn:
-                self.tn_count += 1
-            return (fp_detected, fn_detected, fp_names, fn_names)
+        # Apply synonyms to expected_labels for "benign"
+        expected_labels = apply_synonyms(expected_labels, benign_labels, "benign")
 
-        # Main efficacy calculation loop: treat "detected": false as equivalent to omission.
-        all_detectors = set(expected.keys()) | set(actual.keys())
-        for detector in all_detectors:
-            expected_data = expected.get(detector)
-            actual_data = actual.get(detector)
+        print(f"\n\nDetected detectors labels: {detected_detectors_labels}")
+        print(f"Expected labels: {expected_labels}")
 
-            expected_detected = expected_data.get("detected", False) if expected_data else False
-            actual_detected = actual_data.get("detected", False) if actual_data else False
 
-            if expected_detected and actual_detected:
-                # May have to use "topics" and other things besides "data"?
-                is_sub, mismatch = is_subset(expected_data.get("data", {}), actual_data.get("data", {}))
-                if is_sub:
-                    found_tp.add(detector)
-                    self.per_detector_tp[detector] += 1
-                else:
-                    print(
-                        f"\t{DARK_RED}FP: {detector} - MISMATCH: {mismatch} "
-                        f"expected: {expected_data}, actual: {actual_data}{RESET}"
-                    )
-                    found_fp.add(detector)
-                    self.per_detector_fp[detector] += 1
-            elif expected_detected and not actual_detected:
-                # False negative: expected detected, but actual not detected (or missing in actual)
-                print(f"\t{DARK_RED}FN: {detector} - expected: {expected_data}, actual: {actual_data}{RESET}")
-                found_fn.add(detector)
-                self.per_detector_fn[detector] += 1
-            elif not expected_detected and actual_detected:
-                found_fp.add(detector)
-                self.per_detector_fp[detector] += 1
+        # If any benign label is in expected_labels, we expect no malicious prompt detections
+        for benign_label in benign_labels:
+            if benign_label in expected_labels:
+                # If a benign label is found, we expect no malicious prompt detections
+                if "malicious-prompt" in detected_detectors_labels:
+                    print(f"{DARK_RED}FP: Detected 'malicious-prompt' when expecting benign label '{benign_label}'{RESET}")
+                    fp_detected = True
+                    found_fp.add("malicious-prompt")
+                    self.per_detector_fp["malicious-prompt"] += 1
+                    # Remove "malicious-prompt" from detected_detectors_labels 
+                    # avoid duplicates.
+                    detected_detectors_labels.remove("malicious-prompt")
+                    expected_labels.remove(benign_label)
+                    break  # No need to check further benign labels
+        # Since we're done checking benign labels, we can remove them from expected_labels
+        expected_labels = [label for label in expected_labels if label not in benign_labels]
+            
+        for expected in expected_labels:
+            if expected in detected_detectors_labels:
+                # If the expected label is in the detected labels, it's a True Positive
+                print(f"{DARK_GREEN}TP: Expected label '{expected}' detected in {detected_detectors_labels}{RESET}")    
+                tp_detected = True
+                found_tp.add(expected)
+                self.per_detector_tp[expected] += 1
             else:
-                found_tn.add(detector)
-                self.per_detector_tn[detector] += 1
+                print(f"{DARK_YELLOW}FN: Expected label '{expected}' not detected in {detected_detectors_labels}{RESET}")
+                fn_detected = True
+                found_fn.add(expected)
+                self.per_detector_fn[expected] += 1
+        for detected in detected_detectors_labels:
+            if detected not in expected_labels:
+                # If the detected label is not in the expected labels, it's a False Positive
+                print(f"{DARK_RED}FP: Detected label '{detected}' not expected in {expected_labels}{RESET}")
+                fp_detected = True
+                found_fp.add(detected)
+                self.per_detector_fp[detected] += 1
+        # No need to check for FN here, as we already checked expected_labels against detected_detectors_labels
+        
         # Update case-level counts: record both false positives and false negatives if present
         if found_fp:
             self.fp_count += 1
@@ -228,7 +193,8 @@ class EfficacyTracker:
         if not found_fp and not found_fn:
             if found_tp:
                 self.tp_count += 1
-            elif found_tn:
+            else:
+                # true negative: nothing expected and nothing detected
                 self.tn_count += 1
         return (fp_detected, fn_detected, fp_names, fn_names)
 
@@ -329,9 +295,9 @@ class AIGuardManager:
     def __init__(
         self,
         args,
-        skip_cache: bool = False,
-        service: str = "ai-guard",
-        endpoint: str = "/v1/text/guard",
+        skip_cache: bool = defaults.ai_guard_skip_cache,
+        service: str = defaults.ai_guard_service,
+        endpoint: str = defaults.ai_guard_endpoint,
     ):
         self.efficacy = EfficacyTracker()
 
@@ -343,77 +309,30 @@ class AIGuardManager:
         self.service = service
         self.endpoint = endpoint
 
-        self.valid_detectors = [
-            "malicious-prompt",
-            "topic:toxicity",
-            "topic:self-harm-and-violence",
-            "topic:roleplay",
-            "topic:weapons",
-            "topic:criminal-conduct",
-            "topic:sexual",
-            "topic:financial-advice",
-            "topic:legal-advice",
-            "topic:religion",
-            "topic:politics",
-            "topic:health-coverage",
-            "topic:negative-sentiment",
-            "topic:gibberish"
-        ]
-        self.valid_topics = [
-            "toxicity",
-            "self-harm-and-violence",
-            "roleplay",
-            "weapons",
-            "criminal-conduct",
-            "sexual",
-            "financial-advice",
-            "legal-advice",
-            "religion",
-            "politics",
-            "health-coverage",
-            "negative-sentiment",
-            "gibberish"
-        ]
+        self.valid_detectors = defaults.valid_detectors
+        self.valid_topics = defaults.valid_topics
 
         self.enabled_detectors: list[str] = []
         self.enabled_topics: list[str] = []
         enabled_detectors_str = args.detectors
         if enabled_detectors_str:
-
-            def add_enabled_topic(topic_name: str):
-                if topic_name not in self.valid_topics:
-                    print(
-                        f"{DARK_RED}Invalid topic '{topic_name}' specified. "
-                        f"Valid topics are: {', '.join(self.valid_topics)}{RESET}"
-                    )
-                # Add the topic detector, but only if it is not already enabled
-                if topic_name == "self-harm-and-violence":
-                    # TODO: TEMP FIX UNTIL API IS UPDATED:
-                    # Replace self-harm-and-violence with self harm and violence
-                    topic_name = topic_name.replace("-", " ")
-                if topic_name not in self.enabled_topics:
-                    self.enabled_topics.append(topic_name)
-                if "topic" not in self.enabled_detectors:
-                    self.enabled_detectors.append("topic")
-
             for detector in enabled_detectors_str.split(","):
                 detector = detector.strip().lower()
                 # Replace spaces with hyphens in the detector names:
-                # NOTE: We will have to replace hyphens with spaces for self-harm-and-violence
+                # TODO NOTE: We will have to replace hyphens with spaces for self-harm-and-violence
                 # until the API is fixed.
                 detector = detector.replace(" ", "-")
                 if detector not in self.valid_detectors and detector not in self.valid_topics:
                     print(
                         f"{DARK_RED}Invalid detector '{detector}' specified. "
-                        f"Valid detectors are: {', '.join(self.valid_detectors)}"
-                        f"Or valid topic names: {', '.join(self.valid_topics)}{RESET}"
+                        f"Valid detectors are: {', '.join(self.valid_detectors)}{RESET}"
                     )
                 else:
                     if detector.startswith("topic:"):
                         topic_name = detector.split(":", 1)[1]
-                        add_enabled_topic(topic_name)
+                        self._add_enabled_topic(topic_name)
                     elif detector in self.valid_topics:
-                        add_enabled_topic(detector)
+                        self._add_enabled_topic(detector)
                     else:
                         if detector not in self.enabled_detectors:
                             self.enabled_detectors.append(detector)
@@ -434,27 +353,36 @@ class AIGuardManager:
             [l.strip().lower() for l in args.malicious_prompt_labels.split(",")] if args.malicious_prompt_labels else []
         )
         if not self.malicious_prompt_labels:
-            self.malicious_prompt_labels = ["malicious-prompt", "injection"]
+            self.malicious_prompt_labels = defaults.malicious_prompt_labels 
 
         self.benign_labels: list[str] = []
         self.benign_labels = (
-            [l.strip().lower() for l in args.benign_labels.split(",")] if args.benign_labels else []
+            [
+                l.strip().lower()
+                for l in args.benign_labels.split(",")
+            ] if args.benign_labels else []
         )
         if not self.benign_labels:
-            self.benign_labels = ["benign", "conforming"]
+            self.benign_labels = defaults.benign_labels
+
+        # Ensure that there's no overlap between benign_labels and malicious_prompt_labels
+        # TODO: This should be done when we receive the command line arguments, so we can validate.
+        if set(self.benign_labels) & set(self.malicious_prompt_labels):
+            raise ValueError("Benign and malicious prompt labels must not overlap.")            
 
         self.blocked = 0
         self.error_responses: list[Response] = []
         self.errors: Counter = Counter()
-        self.detectors: Counter = Counter()
-        self.analyzers: Counter = Counter()
-        self.malicious_entities: Counter = Counter()
-        self.topics: Counter = Counter()
-        self.languages: Counter = Counter()
-        self.code_languages: Counter = Counter()
+        self.detected_detectors: Counter = Counter()
+        self.detected_analyzers: Counter = Counter()
+        self.detected_malicious_entities: Counter = Counter()
+        self.detected_topics: Counter = Counter()
+        self.detected_languages: Counter = Counter()
+        self.detected_code_languages: Counter = Counter()
 
         self.label_counts = Counter()
         self.label_stats = defaultdict(lambda: {"FP": 0, "FN": 0})        
+
 
     def add_error_response(self, response):
         self.errors[response.status_code] += 1
@@ -500,6 +428,11 @@ class AIGuardManager:
 
         Returns:
             list: A list of dictionaries containing the detector name and its details.
+            The details will include the "detected" status and any additional data.
+            For example, if "prompt_injection" is detected, it might look like:
+            ["prompt_injection": {"detected": True, "data": {...}}]
+            For "topic", it might look like:
+            ["topic": {"detected": True, "data": {"topics": [{"topic": "negative-sentiment", "confidence": 1.0}]}}]
         """
         detected_detectors = []
 
@@ -664,6 +597,157 @@ class AIGuardManager:
                         detected_with_details[detector].append(str(details["data"]))
         return detected_with_details
 
+    def update_detected_counts(self, detected_detectors):
+        # TODO: May want to replace the "prompt_injection" key with "malicious-prompt"             
+        self.detected_detectors.update(detected_detectors.keys())
+        for detector in detected_detectors.keys():
+            value = detected_detectors[detector]
+            if detector == "prompt_injection":
+                analyzers = value
+                if analyzers:
+                    for analyzer in analyzers:
+                        # Extract analyzer name and confidence if available
+                        if isinstance(analyzer, str):
+                            self.detected_analyzers[analyzer] += 1
+                        elif isinstance(analyzer, dict):
+                            analyzer_name = analyzer.get("analyzer", "Unknown")
+                            self.detected_analyzers[analyzer_name] += 1
+                        else:
+                            print(f"{DARK_RED}Unexpected format for prompt_injection: {analyzer}{RESET}")
+                    # self.detected_analyzers[analyzer] += 1
+            elif detector == "malicious_entity":
+                entities = value
+                if entities:
+                    for entity in entities:
+                        self.detected_malicious_entities[entity] += 1
+            elif detector == "topic":
+                topics = value
+                if topics:
+                    for topic in topics:                        
+                        self.detected_topics[topic] += 1
+            elif detector == "language_detection":
+                languages = detected_detectors[detector]
+                if languages:
+                    for language in languages:
+                        self.detected_languages[language] += 1
+            elif detector == "code_detection":
+                languages = detected_detectors[detector]
+                if languages:
+                    for language in languages:
+                        self.detected_code_languages[language] += 1
+
+    def update_test_labels(self, test: TestCase, label: str):
+        """
+        Update the test labels with the given label if it is not already present.
+        This is used to add labels based on detected detectors.
+        Assumes that the label has been validated and is a valid detector or topic.
+
+        # TODO: We currently only are tracking malicious-prompt and topics, 
+        # so adding labels for other expected detectors might cause issues.
+        # If it does, we can filter them out here for now and stop filtering
+        # them once we have full support for all detectors.
+
+        """
+
+        if self.debug:
+            # TODO: remove this debug print once we have full support for all detectors
+            print(f"{DARK_YELLOW}Updating test labels with: {label}{RESET}")
+            print(f"\tCurrent test labels: {test.labels}")
+
+        if label == "self-harm-and-violence":
+            # TODO: TEMP FIX UNTIL API IS UPDATED:
+            # Replace self-harm-and-violence with self harm and violence
+            label = label.replace("-", " ")
+
+        if label not in test.labels:
+            test.labels.append(label)
+            if self.verbose:
+                print(f"\t{DARK_GREEN}Added label: {label}{RESET}")
+
+    def update_test_labels_from_expected_detectors(self, test: TestCase):
+        """
+        Update the test labels based on the expected_detectors field in the test case.
+        If the test case has labels, this just adds to them from expected_detectors.
+        """
+        try:
+            if not test.expected_detectors:
+                if self.debug:
+                    print(f"{DARK_YELLOW}No expected detectors to update labels from.{RESET}")
+                return
+
+            # If there isn't already a labels element, make sure there is one.
+            test.labels = test.labels or []
+            updated_labels = False
+
+            if test.expected_detectors.prompt_injection and test.expected_detectors.prompt_injection.detected:
+                self.update_test_labels(test, "malicious-prompt")
+                updated_labels = True
+            if test.expected_detectors.topic and test.expected_detectors.topic.detected:
+                topics = test.expected_detectors.topic.topics
+                if topics:
+                    for topic_response in topics:
+                        if topic_response.topic:
+                            topic_name = topic_response.topic
+                            if topic_name and topic_name in self.valid_topics:
+                                self.update_test_labels(test, topic_name)
+                                updated_labels = True
+                #TODO : Add support for other expected detectors
+
+            if self.debug and updated_labels:
+                print(f"{DARK_YELLOW}Updated test labels from expected_detectors. {test.labels}{RESET}")
+        except AttributeError as e:
+            print(
+                f"{DARK_RED}AttributeError updating test labels from "
+                f"expected_detectors: {e}{RESET}"
+            )
+        except KeyError as e:
+            print(
+                f"{DARK_RED}Error updating test labels from expected_detectors: {e}{RESET}"
+            )
+        except Exception as e:
+            print(
+                f"{DARK_RED}Error updating test labels from expected_detectors: {e}{RESET}"
+            )
+
+    def labels_from_actual_detectors(self, actual_detectors: dict):
+        """
+        Extracts labels from the actual detectors detected in the response.
+        This will return a list of labels corresponding to the actual detectors detected.
+        For example, if "prompt_injection" is detected, it will return ["malicious-prompt"].
+        For "topic", it will return a list of topics detected, such as ["negative-sentiment"].
+        """
+        labels = []
+        try:
+            if not actual_detectors:
+                print(f"{DARK_RED}No actual detectors found in response.{RESET}")
+                # If no detectors are found, return an empty list
+                return labels
+
+            for detector, details in actual_detectors.items():
+                if details.get("detected", False):
+                    if detector == "prompt_injection":
+                        labels.append("malicious-prompt")
+                    elif detector == "topic":
+                        topics = details.get("data", {}).get("topics", [])
+                        for topic in topics:
+                            topic_name = topic.get("topic")
+                            if topic_name:
+                                if topic_name in self.valid_topics:
+                                    labels.append(topic_name)
+                                else:
+                                    print(
+                                        f"{DARK_RED}Invalid topic '{topic_name}' detected. "
+                                        f"Valid topics are: {', '.join(self.valid_topics)}{RESET}"
+                                    )
+                    # TODO: Add support for other detectors
+        except KeyError as e:
+            print(f"{DARK_RED}KeyError extracting labels from actual detectors: {e}{RESET}")
+        except Exception as e:
+            print(f"{DARK_RED}Error extracting labels from actual detectors: {e}{RESET}")
+        if self.debug:
+            print(f"{DARK_YELLOW}Extracted labels from actual detectors: {labels}{RESET}")
+        return labels
+
     # TODO: Compare behavior with process_response and PromptDetectionManager._process_prompt_guard_response
     #       in prompt_lab.py:
             # def process_response(self, prompt, response, is_injection, labels):
@@ -683,8 +767,8 @@ class AIGuardManager:
             return
         
         if response.status_code != 200:
-            if self.verbose:
-                print(f"\n\t{DARK_YELLOW}Service failed with status code: {response.status_code}.{RESET}")
+            # TODO: Where do we record the error?  I think it's already recored but check.
+            print(f"\n\t{DARK_YELLOW}Service failed with status code: {response.status_code}.{RESET}")
             return
 
         if self.verbose:
@@ -705,59 +789,47 @@ class AIGuardManager:
 
         print(f"\tSummary: {summary}{RESET}")
 
+        # Extract info on detected detectors and their sub-details
+        # This will return a list of dictionaries with the detector name and its details.
+        # For example, if "prompt_injection" is detected, it might look like:
+        # [
+        #     {"detector": "prompt_injection", "details": {"detected": True, "data": {...}}}
+        # ]
+        # For "topic", it might look like:
+        # [
+        #     {"detector": "topic", "details": {"detected": True, "data": {"topics": [{"topic": "negative-sentiment", "confidence": 1.0}]}}}]
+        # ]
+        ## TODO: Why don't we use get_detected_detectors_with_details here?
+        #       get_detected_detectors_with_details returns a list of dictionaries, but we want a dict
+        #       of detector names with their details.
+        #       get_detected_with_detail returns a dict of detector names with their details.
+        #       So we should use get_detected_with_detail here.
+        #       get_detected_detectors_with_details is used in the efficacy tracker to update the counts.
         detected_detectors = self.get_detected_with_detail(response.json())
-        # if detected_detectors:
-        #     print(f"\t{DARK_GREEN}Detected Detectors: {dict(detected_detectors)}{RESET}")
-        # else:
-        #     print(f"\t{DARK_YELLOW}No detectors detected.{RESET}")
-        # detectors = self.get_detected_detectors(response.json())
-        self.detectors.update(detected_detectors.keys())
-        for detector in detected_detectors.keys():
-            value = detected_detectors[detector]
-            if detector == "prompt_injection":
-                analyzers = value
-                if analyzers:
-                    for analyzer in analyzers:
-                        # Extract analyzer name and confidence if available
-                        if isinstance(analyzer, str):
-                            self.analyzers[analyzer] += 1
-                        elif isinstance(analyzer, dict):
-                            analyzer_name = analyzer.get("analyzer", "Unknown")
-                            self.analyzers[analyzer_name] += 1
-                        else:
-                            print(f"{DARK_RED}Unexpected format for prompt_injection: {analyzer}{RESET}")
-                    self.analyzers[analyzer] += 1
-            elif detector == "malicious_entity":
-                entities = value
-                if entities:
-                    for entity in entities:
-                        self.malicious_entities[entity] += 1
-            elif detector == "topic":
-                topics = value
-                if topics:
-                    for topic in topics:
-                        self.topics[topic] += 1
-            elif detector == "language_detection":
-                languages = detected_detectors[detector]
-                if languages:
-                    for language in languages:
-                        self.languages[language] += 1
-            elif detector == "code_detection":
-                languages = detected_detectors[detector]
-                if languages:
-                    for language in languages:
-                        self.code_languages[language] += 1
+        # Also grab the raw detectors dict from the API response for label extraction
+        raw_detectors = response.json().get("result", {}).get("detectors", {})
 
+        # TODO: ARE WE DOING THIS MULTPLLE TIMES?  LIKE IN efficacy_tracker too?
+        self.update_detected_counts(detected_detectors)
+
+        # This will update the labels so that they contain whatever was in 
+        # test.labels, but also whatever was in test.expected_detectors (union).
+        self.update_test_labels_from_expected_detectors(test)
+
+        expected_detectors_labels = test.labels 
+        actual_detectors_labels = self.labels_from_actual_detectors(raw_detectors)
+
+        if self.debug:
+            print(f"\t{DARK_YELLOW}Actual Detectors Labels: {actual_detectors_labels}{RESET}")
+            print(f"\t{DARK_YELLOW}Expected Detectors Labels: {expected_detectors_labels}{RESET}")
         ### THIS IS WHERE THE CHECK OF EXPECTED VS ACTUAL DETECTORS HAPPENS
-        ### Expected can be from labels OR from the expected_detectors field in the test case.
-        expected_detectors_labels = test.labels
-        expected_detectors = test.expected_detectors
-        actual_result = response.json().get("result", {})
-        actual_detectors = actual_result.get("detectors", {})
-        fp_detected, fn_detected, fp_names, fn_names = self.efficacy.update(
-            expected_labels=expected_detectors_labels,
-            expected=expected_detectors,
-            actual=actual_detectors
+        fp_detected, fn_detected, fp_names, fn_names = (
+            self.efficacy.update(
+                expected_labels=expected_detectors_labels,
+                detected_detectors_labels=actual_detectors_labels,
+                benign_labels=self.benign_labels,
+                malicious_prompt_labels=self.malicious_prompt_labels,
+            )
         )
 
         if fp_detected or fn_detected:
@@ -765,10 +837,6 @@ class AIGuardManager:
                 print(f"\t{DARK_RED}False Positives Detected: {fp_names}")
             if fn_detected:
                 print(f"\t{DARK_RED}False Negatives Detected: {fn_names}")
-
-            print(f"\t{DARK_YELLOW}Detected Detectors:{DARK_RED}{dict(detected_detectors)}{RESET}")
-            print(f"\t{DARK_YELLOW}Expected Detectors:\n{DARK_RED}{formatted_json_str(expected_detectors)}")
-            print(f"\t{DARK_YELLOW}Actual Detectors:\n{DARK_RED}{formatted_json_str(actual_detectors)}")
 
             print(
                 f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:3])}"
@@ -799,12 +867,12 @@ class AIGuardManager:
         print(f"FP Count: {self.efficacy.fp_count}")
         print(f"FN Count: {self.efficacy.fn_count}")
         print(f"Errors: {dict(self.errors)}")
-        print(f"Detected Detectors: {dict(self.detectors)}")
-        print(f"Analyzers: {dict(self.analyzers)}")
-        print(f"Malicious Entities: {dict(self.malicious_entities)}")
-        print(f"Topics: {dict(self.topics)}")
-        print(f"Languages: {dict(self.languages)}")
-        print(f"Code Languages: {dict(self.code_languages)}")
+        print(f"Detected Detectors: {dict(self.detected_detectors)}")
+        print(f"Analyzers: {dict(self.detected_analyzers)}")
+        print(f"Malicious Entities: {dict(self.detected_malicious_entities)}")
+        print(f"Topics: {dict(self.detected_topics)}")
+        print(f"Languages: {dict(self.detected_languages)}")
+        print(f"Code Languages: {dict(self.detected_code_languages)}")
         print("\n--- Efficacy Metrics ---")
         metrics = self.efficacy.calculate_metrics()
         for k, v in metrics.items():
@@ -1021,7 +1089,7 @@ class AIGuardTests:
 
 
         for test_data in data_tests:
-            print(f"Loading test case: {test_data}")
+            # print(f"Loading test case: {test_data}")
             messages = test_data.get("messages")
             if not isinstance(messages, list) or not all(isinstance(msg, dict) for msg in messages):
                 print(f"Warning: Invalid messages format in test case. Skipping test case: {test_data}")
@@ -1104,15 +1172,7 @@ class AIGuardTests:
                 system_prompt = "You're a helpful assistant."
 
             if recipe == "all":
-                recipes = [
-                    "pangea_ingestion_guard",
-                    "pangea_prompt_guard",
-                    "pangea_llm_prompt_guard",
-                    "pangea_llm_response_guard",
-                    "pangea_agent_pre_plan_guard",
-                    "pangea_agent_pre_tool_guard",
-                    "pangea_agent_post_tool_guard",
-                ]
+                recipes = defaults.default_recipes
             else:
                 recipes = [recipe]
 

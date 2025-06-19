@@ -2,8 +2,10 @@
 # Copyright 2021 Pangea Cyber Corporation
 # Author: Pangea Cyber Corporation
 
+from email.policy import default
 from manager.aiguard_manager import AIGuardManager, AIGuardTests
 from config.settings import Settings
+from defaults import defaults   
 import argparse
 
 
@@ -18,10 +20,8 @@ def determine_injection(labels):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "Process prompts with AI Guard API.  "
-            "Specify a prompt or input file."
-        )
+        description="Process prompts with AI Guard API.\n\nSpecify a prompt or input file.",
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
     input_group = parser.add_argument_group("Input arguments")
@@ -31,8 +31,20 @@ def main():
         "--input_file",
         type=str,
         help=(
-            'File containing prompts: .txt - one per line, .json - File with optional global "settings" '
-            'object and "tests" list of test cases (each can have own "settings" object to override) of messages array'
+"""File containing test cases to process. Supports multiple formats: 
+.txt    One prompt per line.
+.jsonl  JSON Lines format, each line is test case with labels and messages array:
+        {"labels": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}
+.json   JSON file with a tests array of test cases, each labels and a messages array:
+        {"tests": [{"labels": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}]}
+        Supports optional global settings that provide defaults for all tests,
+        including a system prompt to include in any test case that doesn't have one
+        and detector configurations.
+        Each test case can specify its own settings to override global ones.
+        Each test case can specify expected_detectors in addition to or as
+        as an alternative to labels.
+"""
+## TODO: Document .csv format and suppot
         ),
     )
 
@@ -40,49 +52,57 @@ def main():
     processing_group.add_argument(
         "--detectors",
         type=str,
-        default="malicious-prompt",
+        default=defaults.default_detectors_str,
         help=(
-            "Comma separated list of detectors to use (default: 'malicious-prompt'). "
-            "Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors. "
-            "Available topic names: toxicity, self-harm-and-violence, roleplay, weapons, criminal-conduct, "
-            "sexual, financial-advice, legal-advice, religion, politics, health-coverage, "
-            "negative-sentiment, gibberish. "
+f"""Comma separated list of detectors to use default: 
+"{defaults.default_detectors_str}"
+Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.
+Available topic names: toxicity, self-harm-and-violence, roleplay, weapons, criminal-conduct,
+"{defaults.valid_topics_str}"
+"""
         ),
     )
     processing_group.add_argument(
         "--topic_threshold",
         type=float,
-        default=1.0,
+        default=defaults.topic_threshold,
         help=(
             "Threshold for topic detection confidence. "
-            "Only applies when using AI Guard with topics. Default: 1.0"
+            f"Only applies when using AI Guard with topics. Default: {defaults.topic_threshold}."
         ),
     )    
     processing_group.add_argument(
         "--fail_fast",
         action="store_true",
         help=(
-            "Enable fail-fast mode: detectors will block on first detection. "
+            "Enable fail-fast mode: detectors will block and exit on first detection. "
             "By default, detectors report all detections."
         ),
     )
     processing_group.add_argument(
         "--malicious_prompt_labels",
         type=str,
-        default="malicious-prompt,injection",
+        default=defaults.malicious_prompt_labels_str,
         help=(
-            "Comma separated list of labels indicating malicious prompt injections (default: 'malicious-prompt,injection'). "
-            "These labels are used to identify expected malicious prompts in the input dataset."
+f"""Comma separated list of labels that can be used to indicate a malicious prompt.
+Default: '{defaults.malicious_prompt_labels_str}')
+Test cases containing any of these label values indicate that the malicious-prompt
+detector is expected to return a detection (it is an FN if it does not).
+Must not overlap with --benign_labels.
+"""
         ),
     )
     processing_group.add_argument(
         "--benign_labels",
         type=str,
-        default="benign,conforming",
+        default=defaults.benign_labels_str,
         help=(
-            "Comma separated list of labels indicating benign prompts (default: 'benign,conforming'). "
-            "These label values are used to identify expected benign prompts in the input dataset.  "
-            "A dataset element with a benign-label can have no other labels."
+f"""Comma separated list of labels that can be used to indicate a benign prompt.
+Default: '{defaults.benign_labels_str}')
+Test cases containing any of these label values indicate that the malicious-prompt
+detector is not expected to return a detection (it is an FP if it does).
+Must not overlap with --malicious_prompt_labels.
+"""
         ),
     )
     processing_group.add_argument(
@@ -94,15 +114,19 @@ def main():
     processing_group.add_argument(
         "--recipe",
         type=str,
-        help="""The recipe to use for processing the prompt:
+        help=( 
+f"""The recipe to use for processing the prompt.  
+Useful when using --prompt for a single prompt.
+Available recipes:
+(all | {"| ".join(defaults.default_recipes)})
+Default: {defaults.default_recipe if defaults.default_recipe else "None"}
+Use "all" to iteratively apply all recipes to the prompt (only supported for --prompt).
 
-        (pangea_ingestion_guard | pangea_prompt_guard | pangea_llm_prompt_guard | pangea_llm_response_guard |
-        pangea_agent_pre_plan_guard | pangea_agent_pre_tool_guard | pangea_agent_post_tool_guard)
-
-        Default: "pangea_prompt_guard"
-
-        Use "all" to apply all recipes (only supported for single prompt)""",
-        default=None,
+Not appliccable when using --detectors or JSON test case objects
+that override the recipe with explicit detectors.
+"""
+        ),
+        default=defaults.default_recipe,
     )
 
 
@@ -142,14 +166,14 @@ def main():
     performance_group.add_argument(
         "--rps",
         type=int,
-        default=1,
-        help="Requests per second (default: 1)",
+        default=defaults.default_rps,
+        help=f"Requests per second (default: {defaults.default_rps})",
     )
     performance_group.add_argument(
         "--max_poll_attempts",
         type=int,
-        default=12,
-        help="Maximum poll attempts for 202 responses (default: 12)",
+        default=defaults.max_poll_attempts,
+        help=f"Maximum poll (retry) attempts for 202 responses (default: {defaults.max_poll_attempts})",
     )
     performance_group.add_argument(
         "--fp_check_only",
@@ -165,7 +189,7 @@ def main():
     system_prompt = args.system_prompt
 
     aig = AIGuardManager(args)
-    settings = Settings(system_prompt, recipe or "pangea_prompt_guard")
+    settings = Settings(system_prompt, recipe)
     aig_test = AIGuardTests(settings, args)
     aig_test.process_all_prompts(args, aig)
 

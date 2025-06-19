@@ -8,19 +8,21 @@ import requests
 from requests.models import Response
 from urllib.parse import urljoin
 from utils.colors import DARK_RED, DARK_YELLOW, DARK_BLUE, DARK_GREEN, RED, RESET
+from defaults import defaults
 
 
-ai_guard_token = os.getenv("PANGEA_AI_GUARD_TOKEN")
-assert ai_guard_token, "PANGEA_AI_GUARD_TOKEN environment variable not set"
-# domain = os.getenv("PANGEA_DOMAIN")
-# assert domain, "PANGEA_DOMAIN environment variable not set"
-base_url = os.getenv("PANGEA_BASE_URL")
-assert base_url, "PANGEA_BASE_URL environment variable not set"
+ai_guard_token = os.getenv(defaults.ai_guard_token)
+assert ai_guard_token, f"{defaults.ai_guard_token} environment variable not set"
+# domain = os.getenv(defaults.pangea_domain)
+# assert domain, f"{defaults.pangea_domain} environment variable not set"
+base_url = os.getenv(defaults.pangea_base_url)
+assert base_url, f"{defaults.pangea_base_url} environment variable not set"
 
 
 
-connection_timeout = 12
-read_timeout = 60
+connection_timeout = defaults.connection_timeout
+# Default is 12 seconds, but can be overridden by the user
+read_timeout = defaults.read_timeout
 
 
 def create_error_response(status_code, message):
@@ -42,6 +44,7 @@ def create_error_response(status_code, message):
 def pangea_post_api(service, endpoint, data, skip_cache=False, token=ai_guard_token, base_url=base_url):
     try:
         url = urljoin(base_url, endpoint) # TODO: fix this to use service, endpoint, domain or base_url
+        # print(f"POST {url} with data: {data}")
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"

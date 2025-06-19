@@ -2,7 +2,7 @@
 # Author: Pangea Cyber Corporation
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, TypedDict, Literal, Union
+from typing import List, Optional, Dict
 from config.settings import Settings  # Assuming Settings is already defined in config/settings.py
 
 """
@@ -57,17 +57,6 @@ Want expected_detectors to look like what AI Guard returns, e.g.:
 """
 
 
-class EntityResponse(TypedDict, total=False):
-    type: str
-    value: str
-    action: str
-
-
-class EntityResult(TypedDict):
-    detected: bool
-    data: Dict[str, List[EntityResponse]]  # Contains a list of entities with their type, value, and action
-
-
 """
     Code Detector (CodeResult)
     "expected_detectors": {
@@ -80,11 +69,6 @@ class EntityResult(TypedDict):
         }
     }
 """
-
-
-class CodeResult(TypedDict, total=False):
-    detected: bool
-    data: Dict[str, str]  # Contains language and action
 
 
 """
@@ -107,21 +91,6 @@ class CodeResult(TypedDict, total=False):
 """
 
 
-class AnalyzerResponse(TypedDict, total=False):
-    analyzer: str
-    confidence: float
-
-
-class DetectorData(TypedDict):
-    action: str
-    analyzer_responses: List[AnalyzerResponse]
-
-
-class DetectorResult(TypedDict):
-    detected: bool
-    data: DetectorData
-
-
 """
     TopicResult
 
@@ -142,35 +111,60 @@ class DetectorResult(TypedDict):
 """
 
 
-class TopicResponse(TypedDict, total=False):
+@dataclass
+class EntityResponse:
+    type: str
+    value: str
+    action: str
+
+@dataclass
+class EntityResult:
+    detected: bool = False
+    data: Dict[str, List[EntityResponse]] = field(default_factory=dict)
+
+@dataclass
+class CodeResult:
+    detected: bool = False
+    data: Dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class AnalyzerResponse:
+    analyzer: str
+    confidence: float
+
+@dataclass
+class DetectorData:
+    action: str
+    analyzer_responses: List[AnalyzerResponse] = field(default_factory=list)
+
+@dataclass
+class DetectorResult:
+    detected: bool = False
+    data: DetectorData = field(default_factory=DetectorData)
+
+
+# Re-insert the TopicResponse class
+@dataclass
+class TopicResponse:
     topic: str
     confidence: float
 
-
-class TopicResult(TypedDict):
-    detected: bool
-    action: str
-    data: Dict[str, List[TopicResponse]]  # Contains a list of topics with their confidence scores
-
-
-class ExpectedDetectors(TypedDict, total=False):
-    prompt_injection: DetectorResult
-    code_detection: CodeResult
-    language_detection: DetectorResult
-    topic: TopicResult
-    malicious_entity: EntityResult
-    custom_entity: EntityResult
-
-
-# Define the expected keys for the expected_detectors dictionary - as new detectors are added, they should be included here.
-expected_detector_allowed_keys = {
-    "prompt_injection",
-    "code_detection",
-    "language_detection",
-    "topic",
-    "malicious_entity",
-    "custom_entity",
-}
+@dataclass
+class TopicResult:
+    detected: bool = False
+    topics: List[TopicResponse] = field(default_factory=list)
+    action: str = ""
+    @property
+    def data(self) -> Dict[str, List[TopicResponse]]:
+        return {"topics": self.topics}
+@dataclass
+class ExpectedDetectors:
+    prompt_injection: Optional[DetectorResult]    = None
+    code_detection:   Optional[CodeResult]        = None
+    language_detection: Optional[DetectorResult]  = None
+    topic:            Optional[TopicResult]        = None
+    malicious_entity: Optional[EntityResult]      = None
+    custom_entity:    Optional[EntityResult]      = None
 
 
 @dataclass
@@ -179,7 +173,7 @@ class TestCase:
 
     settings: Optional[Settings] = None
     messages: List[Dict[str, str]] = field(default_factory=list)
-    expected_detectors: Optional[ExpectedDetectors] = None
+    expected_detectors: ExpectedDetectors = field(default_factory=ExpectedDetectors)
     labels: Optional[List[str]] = field(default_factory=list)  # Optional labels for the test case
 
 
@@ -188,7 +182,7 @@ class TestCase:
         messages: List[dict],
         labels: Optional[List[str]] = None,
         settings: Optional[Settings] = None,
-        expected_detectors: Optional[ExpectedDetectors] = None,
+        expected_detectors: Optional[dict] = None,
     ):
         self.messages = messages
         self.labels = labels if labels is not None else []
@@ -200,21 +194,70 @@ class TestCase:
             raise ValueError("Labels must be a list of strings.")
         if labels is not None and not all(isinstance(label, str) for label in labels):
             raise ValueError("All labels must be strings.")
-        # Assign expected detectors so that they're available later
-        self.expected_detectors = expected_detectors
         # Optional Settings object that can hold recipe, system_prompt, overrides, and log_fields.
         if settings is not None:
             self.settings = settings
-        self.validate_expected_detectors()
-
-    def validate_expected_detectors(self):
-        """Ensure all keys in expected_detectors are recognized detector names."""
-        if not self.expected_detectors:
-            return
-
-        for key in self.expected_detectors:
-            if key not in expected_detector_allowed_keys:
-                raise ValueError(f"Unexpected detector key: {key}")
+        if expected_detectors:
+            ed = ExpectedDetectors()
+            for name, value in expected_detectors.items():
+                if name == "prompt_injection" and value is not None:
+                    ed.prompt_injection = DetectorResult(
+                        detected=value.get("detected", False),
+                        data=DetectorData(
+                            action=value["data"].get("action", ""),
+                            analyzer_responses=[
+                                AnalyzerResponse(
+                                    analyzer=ar.get("analyzer", ""),
+                                    confidence=ar.get("confidence", 0.0),
+                                )
+                                for ar in value["data"].get("analyzer_responses", [])
+                            ],
+                        ),
+                    )
+                elif name == "code_detection" and value is not None:
+                    ed.code_detection = CodeResult(
+                        detected=value.get("detected", False),
+                        data=value["data"],
+                    )
+                elif name == "language_detection" and value is not None:
+                    ed.language_detection = DetectorResult(
+                        detected=value.get("detected", False),
+                        data=DetectorData(
+                            action=value["data"].get("action", ""),
+                            analyzer_responses=[
+                                AnalyzerResponse(
+                                    analyzer=ar.get("analyzer", ""),
+                                    confidence=ar.get("confidence", 0.0),
+                                )
+                                for ar in value["data"].get("analyzer_responses", [])
+                            ],
+                        ),
+                    )
+                elif name == "topic" and value is not None:
+                    ed.topic = TopicResult(
+                        detected=value.get("detected", False),
+                        action=value.get("action", ""),
+                        topics=[
+                            TopicResponse(
+                                topic=tr.get("topic", ""),
+                                confidence=tr.get("confidence", 0.0),
+                            )
+                            for tr in value["data"].get("topics", [])
+                        ],
+                    )
+                elif name in ("malicious_entity", "custom_entity") and value is not None:
+                    setattr(ed, name, EntityResult(
+                        detected=value.get("detected", False),
+                        data={
+                            "entities": [
+                                EntityResponse(**er)
+                                for er in value["data"].get("entities", [])
+                            ]
+                        },
+                    ))
+            self.expected_detectors = ed
+        else:
+            self.expected_detectors = ExpectedDetectors()
 
     # TODO: The Settings.system_prompt could be there AND there could be a system message in the messages list.
     #       If there is a system message in the messages list, it should take precedence over the system_prompt.

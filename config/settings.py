@@ -80,7 +80,7 @@ class Settings:
     ):
         if not isinstance(system_prompt, (str, type(None))):
             raise ValueError(f"system_prompt must be a string or None, got {type(system_prompt).__name__}")
-        if not isinstance(recipe, (str)):
+        if not isinstance(recipe, (str, type(None))):
             raise ValueError(f"recipe must be a string or None, got {type(recipe).__name__}")
 
         self.system_prompt = system_prompt
