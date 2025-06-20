@@ -39,7 +39,7 @@ malicious_prompt_labels = [
     "prompt-injection",
     "prompt-injection-auto",
     "adversarial_prefix",
-    "adversarial-suffix",
+    "adversarial_suffix",
     "direct",
     "direct_auto",
     "direct-injection",

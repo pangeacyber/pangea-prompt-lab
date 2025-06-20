@@ -11,6 +11,7 @@ import json
 from collections import Counter, defaultdict
 from typing import List, Dict, Optional
 from typing import List, Optional
+from typing import TypedDict, Dict
 from requests.models import Response
 from pydantic import BaseModel, Field
 
@@ -36,7 +37,22 @@ from defaults import defaults
 
 
 class EfficacyTracker:
-    def __init__(self):
+    class FailedTestCase:
+        def __init__(self, test: TestCase, expected_label: str, detector_seen: str):
+            self.test: TestCase = test
+            self.expected_label: str = expected_label
+            self.detector_seen: str = detector_seen
+
+    def __init__(
+            self, 
+            args=None, 
+            keep_tp_and_tn_tests: bool = False # whether to keep copies of TP and TN test case objs for reporting later
+            ):
+        self.args = args
+        self.verbose = args.verbose if args else False
+        self.debug = args.debug if args else False
+        self.track_tp_and_tn_cases = keep_tp_and_tn_tests 
+        # Overall counts
         self.tp_count = 0
         self.fp_count = 0
         self.fn_count = 0
@@ -49,8 +65,137 @@ class EfficacyTracker:
         self.per_detector_fn = Counter()
         self.per_detector_tn = Counter()
 
+        # Initialize label counts and stats
+        # TODO: These are not yet set - should we set them in update()?
+        self.label_counts: Counter = Counter()
+        self.label_stats: defaultdict = defaultdict(lambda: {"FP": 0, "FN": 0})
+
+        # Save collections of false positives, false negatives
+        # for reporting (fps_out and fns_out).
+        # These will have copies of TestCase objects that have 
+        # FPs, TPs, FNs or TNs (TPs and TNs only if track_tp_and_tn_cases is True)
+        # But there will be only one copy a given test case in each collection, 
+        # even if it has multiple FPs, TPs, FNs or TNs.
+        # So the count of each collection will be the number of test cases
+        # that had FPs, TPs, FNs or TNs.  The sum of the counts of all 
+        # collection should be the total number of test cases processed.
+        # TODO: Check at the end that the sum of the counts of all collections
+        # is equal to self.total_calls.
+        self.false_positives: list[EfficacyTracker.FailedTestCase] = []
+        self.true_positives: list[EfficacyTracker.FailedTestCase] = []
+        self.false_negatives: list[EfficacyTracker.FailedTestCase] = []
+        self.true_negatives: list[EfficacyTracker.FailedTestCase] = []
+
+    def add_false_positive(
+        self,
+        test: TestCase,
+        detector_seen: str,
+        expected_label: str
+    ):
+        """
+        Add a test case to the false positives collection.
+        This is used to track test cases where no detection was expected 
+        for the given detector, but detection was seen.
+        """
+        if test not in self.false_positives:
+            self.false_positives.append(
+                EfficacyTracker.FailedTestCase(test, expected_label,
+                                               detector_seen)
+            )
+        self.fp_count += 1
+        self.per_detector_fp[detector_seen] += 1
+
+        if self.verbose:
+            print(f"{DARK_RED}FP: expected_label '{expected_label}' but detected '{detector_seen}'")
+            print(
+                f"\t{DARK_YELLOW}Messages:\n"
+                f"{DARK_RED}{formatted_json_str(test.messages[:3])}{RESET}"
+            )
+
+    def add_true_negative(
+        self,
+        test: TestCase,
+        detector_not_seen: str,
+        expected_label: str = "benign"
+    ):
+        """
+        TODO: MAY NOT WANT TO DO THIS - COULD BE NOISY (at least not keep every test case)
+        Add a test case to the true positives collection.
+        This is used to track test cases where a detection was not expected
+        for expected_label and it was not seen.
+        """
+        if test not in self.true_negatives:
+            if self.track_tp_and_tn_cases:
+                self.true_negatives.append(
+                    EfficacyTracker.FailedTestCase(test, expected_label,
+                                                   detector_not_seen)
+                )
+        self.tn_count += 1
+        self.per_detector_tn[detector_not_seen] += 1
+
+        if self.debug:
+            print(f"{DARK_GREEN}TN: expected_label '{expected_label}' detected '{detector_not_seen}'")
+            print(
+                f"\t{DARK_YELLOW}Messages:\n"
+                f"{DARK_GREEN}{formatted_json_str(test.messages[:3])}{RESET}"
+            )
+
+    def add_true_positive(
+        self,
+        test: TestCase,
+        detector_seen: str,
+        expected_label: str
+    ):
+        """
+        Add a test case to the true positives collection.
+        This is used to track test cases where a detection was expected
+        for detector_seen given expected_label, and it was seen.
+        """
+        if test not in self.true_positives:
+            if self.track_tp_and_tn_cases:
+                self.true_positives.append(
+                    EfficacyTracker.FailedTestCase(test, expected_label,
+                                                detector_seen)
+                )
+        self.tp_count += 1
+        self.per_detector_tp[detector_seen] += 1
+
+        if self.debug:
+            print(f"{DARK_GREEN}TP: expected_label '{expected_label}' detected '{detector_seen}'")
+            print(
+                f"\t{DARK_YELLOW}Messages:\n"
+                f"{DARK_GREEN}{formatted_json_str(test.messages[:3])}{RESET}"
+            )
+
+    def add_false_negative(
+            self,
+            test: TestCase,
+            detector_not_seen: str,
+            expected_label: str = "benign"
+    ):
+        """
+        Add a test case to the false negatives collection.
+        This is used to track test cases where a detection was expected for
+        the given detector but was not seen.
+        """
+        if test not in self.false_negatives:
+            self.false_negatives.append(
+                EfficacyTracker.FailedTestCase(test, expected_label,
+                                               detector_not_seen)
+            )
+        self.fn_count += 1
+        self.per_detector_fn[detector_not_seen] += 1
+
+        if self.verbose:
+            print(f"{DARK_RED}FN: expected detection: '{detector_not_seen}' for expected_label:'{expected_label}'")
+            print(
+                f"\t{DARK_YELLOW}Messages:\n"
+                f"{DARK_RED}{formatted_json_str(test.messages[:3])}{RESET}"
+            )
+
     def update(
             self,
+            test: TestCase,
             expected_labels: List[str], 
             detected_detectors_labels: List[str],
             benign_labels: List[str] = ["benign", "benign_auto", "conforming"], # TODO: get this from a global or config
@@ -138,8 +283,14 @@ class EfficacyTracker:
         # Apply synonyms to expected_labels for "benign"
         expected_labels = apply_synonyms(expected_labels, benign_labels, "benign")
 
-        print(f"\n\nDetected detectors labels: {detected_detectors_labels}")
-        print(f"Expected labels: {expected_labels}")
+        # Update label_counts
+        if test and test.labels:
+            for label in test.labels:
+                self.label_counts[label] += 1
+
+        if self.debug:
+            print(f"\n\nDetected detectors labels: {detected_detectors_labels}")
+            print(f"Expected labels: {expected_labels}")
 
 
         # If any benign label is in expected_labels, we expect no malicious prompt detections
@@ -147,12 +298,21 @@ class EfficacyTracker:
             if benign_label in expected_labels:
                 # If a benign label is found, we expect no malicious prompt detections
                 if "malicious-prompt" in detected_detectors_labels:
-                    print(f"{DARK_RED}FP: Detected 'malicious-prompt' when expecting benign label '{benign_label}'{RESET}")
+                    if self.debug:
+                        print(f"{DARK_YELLOW}Checking for benign label '{benign_label}' in expected_labels...{RESET}")
+                        print(f"{DARK_RED}FP: Detected 'malicious-prompt' when expecting benign label '{benign_label}'{RESET}")
+
                     fp_detected = True
                     found_fp.add("malicious-prompt")
-                    self.per_detector_fp["malicious-prompt"] += 1
-                    # Remove "malicious-prompt" from detected_detectors_labels 
-                    # avoid duplicates.
+
+                    self.add_false_positive(
+                        test,
+                        expected_label=benign_label,
+                        detector_seen="malicious-prompt"
+                    )
+
+                    # Remove "malicious-prompt" from detected_detectors_labels,
+                    # and the benign label from expected_labels to avoid duplicates.
                     detected_detectors_labels.remove("malicious-prompt")
                     expected_labels.remove(benign_label)
                     break  # No need to check further benign labels
@@ -162,59 +322,181 @@ class EfficacyTracker:
         for expected in expected_labels:
             if expected in detected_detectors_labels:
                 # If the expected label is in the detected labels, it's a True Positive
-                print(f"{DARK_GREEN}TP: Expected label '{expected}' detected in {detected_detectors_labels}{RESET}")    
+                if self.debug:
+                    print(f"{DARK_YELLOW}Checking for expected label '{expected}' in detected_detectors_labels...{RESET}")  
+                    print(f"{DARK_GREEN}TP: Expected label '{expected}' detected in {detected_detectors_labels}{RESET}")    
+
                 tp_detected = True
                 found_tp.add(expected)
-                self.per_detector_tp[expected] += 1
+
+                self.add_true_positive(
+                    test,
+                    expected_label=expected,
+                    detector_seen=expected
+                )
             else:
-                print(f"{DARK_YELLOW}FN: Expected label '{expected}' not detected in {detected_detectors_labels}{RESET}")
+                if self.debug:
+                    print(f"{DARK_YELLOW}Checking for expected label '{expected}' in detected_detectors_labels...{RESET}")  
+                    print(f"{DARK_YELLOW}FN: Expected label '{expected}' not detected in {detected_detectors_labels}{RESET}")
+
                 fn_detected = True
                 found_fn.add(expected)
-                self.per_detector_fn[expected] += 1
+
+                self.add_false_negative(
+                    test,
+                    detector_not_seen=expected
+                )
         for detected in detected_detectors_labels:
             if detected not in expected_labels:
-                # If the detected label is not in the expected labels, it's a False Positive
-                print(f"{DARK_RED}FP: Detected label '{detected}' not expected in {expected_labels}{RESET}")
+                # If the detected detector is not in the expected labels, it's a False Positive
+                if self.debug:
+                    print(f"{DARK_YELLOW}Checking for detected detector '{detected}' in expected_labels...{RESET}")  
+                    print(f"{DARK_RED}FP: Detected detector '{detected}' not expected in {expected_labels}{RESET}")
+
                 fp_detected = True
                 found_fp.add(detected)
-                self.per_detector_fp[detected] += 1
-        # No need to check for FN here, as we already checked expected_labels against detected_detectors_labels
+
+                self.add_false_positive(
+                    test,
+                    expected_label="benign",
+                    detector_seen=detected
+                )
+        # No need to check for FN here, as we already checked expected_labels
+        # against detected_detectors_labels
         
-        # Update case-level counts: record both false positives and false negatives if present
+        # Update case-level counts: record both false positives and false
+        # negatives if present
         if found_fp:
-            self.fp_count += 1
+            self.fp_count += 1 # TODO: This should be a test_case_fp_count, 
+                               #  not a global fp_count.  BUT, won't self.false_positives be that?
+                               # 
             fp_detected = True
             fp_names.extend(found_fp)
         if found_fn:
-            self.fn_count += 1
+            self.fn_count += 1 # TODO: This should be a test_case_fn_count, not a global fn_count
             fn_detected = True
             fn_names.extend(found_fn)
         # If no false positives or false negatives, record a TP or TN
         if not found_fp and not found_fn:
             if found_tp:
-                self.tp_count += 1
+               tp_detected = True
+               # TODO: What does this case mean?
+               # How do we know what the found tp was?
+               detected = found_tp.pop()  # Get one of the found TPs
+               found_tp.add(detected) # Assuming benign is the default for TP
+               self.add_true_positive(
+                    test,
+                    expected_label=detected,
+                    detector_seen=detected
+                )
             else:
                 # true negative: nothing expected and nothing detected
+                tn_detected = True
+                found_tn.add("benign")  # Assuming benign is the default for TN
+                self.add_true_negative(
+                    test,
+                    expected_label="benign",
+                    detector_not_seen="benign"
+                )
                 self.tn_count += 1
         return (fp_detected, fn_detected, fp_names, fn_names)
 
-    def calculate_metrics(self):
-        total = self.tp_count + self.fp_count + self.fn_count + self.tn_count
-        precision = self.tp_count / (self.tp_count + self.fp_count) if (self.tp_count + self.fp_count) else 0
-        recall = self.tp_count / (self.tp_count + self.fn_count) if (self.tp_count + self.fn_count) else 0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
-        accuracy = (self.tp_count + self.tn_count) / total if total else 0
-        specificity = self.tn_count / (self.tn_count + self.fp_count) if (self.tn_count + self.fp_count) else 0
-        metrics = {
+    class MetricsDict(TypedDict, total=False):
+        accuracy: float
+        precision: float
+        recall: float
+        f1_score: float
+        specificity: float
+        fp_rate: float
+        fn_rate: float
+
+        tp_count: int 
+        tn_count: int  
+        fp_count: int
+        fn_count: int
+        total_count: int  
+
+        # Optional fields for overall metrics
+        avg_duration: float 
+        total_calls: int    # total number of calls made to AI Guard
+        fp_saved_test_count: int  # saved test cases with false positives
+        fn_saved_test_count: int  # saved test cases with false negatives
+        tp_saved_test_count: int  # saved test cases with true positives (only if track_tp_and_tn_cases is True)
+        tn_saved_test_count: int  # saved test cases with true negatives (only if track_tp_and_tn_cases is True)
+        total_saved_test_count: int  # total saved test cases non-zero efficacy
+        tp_detector_summary: str  # summary of per-detector TP counts
+        fp_detector_summary: str  # summary of per-detector FP counts
+        fn_detector_summary: str  # summary of per-detector FN counts
+        tn_detector_summary: str  # summary of per-detector TN counts
+
+
+
+    def calculate_metrics(self) -> Dict[str, "EfficacyTracker.MetricsDict"]:
+        """
+        Calculate and return various metrics based on the current counts.
+        Returns a map of detector names to their metrics. 
+        metrics["name"] = detector_metrics
+        Names can be "overall", <detector_name> or <topic_name>, or <label_name>
+        """
+        all_metrics: dict[str, MetricsDict] = {}
+
+        # TODO: Check at the end that the sum of the counts of all collections
+        # is equal to self.total_calls.
+        fp_test_count = len(self.false_positives)
+        fn_test_count = len(self.false_negatives)
+        tp_test_count = len(self.true_positives)
+        tn_test_count = len(self.true_negatives)
+        total_test_count = (fp_test_count + fn_test_count + tp_test_count + tn_test_count)
+
+        tp = self.tp_count
+        fp = self.fp_count
+        fn = self.fn_count
+        tn = self.tn_count
+        total = tp + fp + fn + tn
+
+        fp_rate = fp / (fp + tn) if (fp + tn) else 0
+        fn_rate = fn / (tp + fn) if (tp + fn) else 0
+        precision = tp / (tp + fp) if (tp + fp) else 0
+        recall = tp / (tp + fn) if (tp + fn) else 0
+        f1 = (
+            2 * precision * recall / (precision + recall) if (precision + recall) else 0
+        )
+        accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) else 0
+        specificity = tn / (tn + fp) if (tn + fp) else 0
+        # TODO: Ensure that the overall_metrics are only calculated against per-test case metrics,
+        # not the overall counts.  NOT SURE HOW TO DO THIS YET OR HOW TO DEFINE IT.
+        # Each test case can have multiple labels and there can be tps, tns, fps, fns for each label.
+        # So we need to calculate the metrics for each label, detector, and topic separately.
+        # So what do overall metrics mean?  Does it make sense to have overall metrics? TBD
+        overall_metrics: EfficacyTracker.MetricsDict = {
             "accuracy": accuracy,
             "precision": precision,
             "recall": recall,
             "f1_score": f1,
             "specificity": specificity,
-            "fp_rate": self.fp_count / (self.fp_count + self.tn_count) if (self.fp_count + self.tn_count) else 0,
-            "fn_rate": self.fn_count / (self.tp_count + self.fn_count) if (self.tp_count + self.fn_count) else 0,
+            "fp_rate": fp_rate,
+            "fn_rate": fn_rate,
+
+            "total_count": total,
+            "tp_count": self.tp_count,
+            "tn_count": self.tn_count,
+            "fp_count": self.fp_count,
+            "fn_count": self.fn_count,
+
             "avg_duration": self.duration_sum / self.total_calls if self.total_calls else 0.0,
+            "total_calls": self.total_calls,
+            "total_saved_test_count": total_test_count,
+            "fp_saved_test_count": fp_test_count,
+            "fn_saved_test_count": fn_test_count,
+            "tp_saved_test_count": tp_test_count,
+            "tn_saved_test_count": tn_test_count,
+            "tp_detector_summary": f"{dict(self.per_detector_tp)}",
+            "fp_detector_summary": f"{dict(self.per_detector_fp)}",
+            "fn_detector_summary": f"{dict(self.per_detector_fn)}",
+            "tn_detector_summary": f"{dict(self.per_detector_tn)}",
         }
+        all_metrics["overall"] = overall_metrics
+
         # Per-detector metrics
         all_detectors = (
             set(self.per_detector_tp)
@@ -227,25 +509,125 @@ class EfficacyTracker:
             fp = self.per_detector_fp[detector]
             fn = self.per_detector_fn[detector]
             tn = self.per_detector_tn[detector]
-            det_precision = tp / (tp + fp) if (tp + fp) else 0
-            det_recall = tp / (tp + fn) if (tp + fn) else 0
-            det_f1 = (
-                2 * det_precision * det_recall / (det_precision + det_recall) if (det_precision + det_recall) else 0
+            total = tp + fp + fn + tn
+            fp_rate = fp / (fp + tn) if (fp + tn) else 0
+            fn_rate = fn / (tp + fn) if (tp + fn) else 0
+            precision = tp / (tp + fp) if (tp + fp) else 0
+            recall = tp / (tp + fn) if (tp + fn) else 0
+            f1 = (
+                2 * precision * recall / (precision + recall) if (precision + recall) else 0
             )
-            det_accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) else 0
-            metrics[f"{detector}_precision"] = det_precision
-            metrics[f"{detector}_recall"] = det_recall
-            metrics[f"{detector}_f1"] = det_f1
-            metrics[f"{detector}_accuracy"] = det_accuracy
-        return metrics
+            accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) else 0
+            specificity = tn / (tn + fp) if (tn + fp) else 0
+            det_metrics: EfficacyTracker.MetricsDict = {
+                "accuracy": accuracy,
+                "precision": precision,
+                "recall": recall,
+                "f1_score": f1,
+                "specificity": specificity,
+                "fp_rate": fp_rate,
+                "fn_rate": fn_rate,
 
-    def print_state(self):
-        print(f"TP: {self.tp_count}, FP: {self.fp_count}, FN: {self.fn_count}, TN: {self.tn_count}")
-        print(f"Total Calls: {self.total_calls}")
-        print(f"Duration Sum: {self.duration_sum:.2f} seconds")
+                "total_count": total,
+                "tp_count": tp,
+                "tn_count": tn,
+                "fp_count": fp,
+                "fn_count": fn,
+            }
+            all_metrics[detector] = det_metrics
+
+        return all_metrics
+
+    def print_stats(self, enabled_detectors: List[str] = None):
+        """ Print a summary of the efficacy statistics.
+        TODO: Output label stats?
+        TODO: Make reusable for stdout and summary report file.
+        """
         metrics = self.calculate_metrics()
-        for k, v in metrics.items():
-            print(f"{k}: {v:.4f}")
+        print(f"\n---{DARK_GREEN}AIGuard Summary{RESET}---")
+        for detector, det_metrics in metrics.items():
+            # Filter unused detectors
+            if detector not in enabled_detectors and detector != "overall":
+                ## TODO: This isn't the complete check - 
+                ## Need to account for detectors that were enabled via overrides or test cases
+                continue
+
+            if detector == "overall":
+               print(f"\n--{DARK_GREEN}Overall Counts:{RESET}--")
+            else:
+                print(f"\n--{DARK_GREEN}Detector: {detector}{RESET}--")
+
+            # Summarize detectors with zero counts
+            if det_metrics['total_count'] == 0:
+                print(f"{DARK_YELLOW}No non-zero results for this detector.{RESET}")
+                continue
+
+            print(f"{DARK_GREEN}True Positives: {det_metrics['tp_count']}{RESET}")
+            print(f"{DARK_GREEN}True Negatives: {det_metrics['tn_count']}{RESET}")
+            print(f"{DARK_RED}False Positives: {det_metrics['fp_count']}{RESET}")
+            print(f"{DARK_RED}False Negatives: {det_metrics['fn_count']}{RESET}")
+            print(f"\nAccuracy: {DARK_GREEN}{det_metrics['accuracy']:.4f}{RESET}")
+            print(f"Precision: {DARK_GREEN}{det_metrics['precision']:.4f}{RESET}")
+            print(f"Recall: {DARK_GREEN}{det_metrics['recall']:.4f}{RESET}")
+            print(f"F1 Score: {DARK_GREEN}{det_metrics['f1_score']:.4f}{RESET}")
+            print(f"Specificity: {DARK_GREEN}{det_metrics['specificity']:.4f}{RESET}")
+            print(f"False Positive Rate: {DARK_RED}{det_metrics['fp_rate']:.4f}{RESET}")
+            print(f"False Negative Rate: {DARK_RED}{det_metrics['fn_rate']:.4f}{RESET}")
+            if detector == "overall":
+                print(f"\nAverage duration: {det_metrics['avg_duration']:.4f} seconds")
+                print(f"Total calls: {det_metrics['total_calls']}")
+                print("--- Info on Test Cases Saved for Reporting ---")
+                print(f"NOTE: These are the test cases that had non-zero FP/FN/TP/TN stats.")
+                print(f"NOTE: TP and TN cases not saved unless track_tp_and_tn_cases is True.")
+                print(f"      track_tp_and_tn_cases: {self.track_tp_and_tn_cases}")
+                print(f"Total Test Cases Saved: {det_metrics['total_saved_test_count']}")
+                print(f"Saved Test Cases with FPs: {det_metrics['fp_saved_test_count']}")
+                print(f"Saved Test Cases with FNs: {det_metrics['fn_saved_test_count']}")
+                print(f"Saved Test Cases with TPs: {det_metrics['tp_saved_test_count']}")
+                print(f"Saved Test Cases with TNs: {det_metrics['tn_saved_test_count']}")
+                print(f"\nSummary of Per-detector TPs: {det_metrics['tp_detector_summary']}")
+                print(f"Summary of Per-detector FPs: {det_metrics['fp_detector_summary']}")
+                print(f"Summary of Per-detector FNs: {det_metrics['fn_detector_summary']}")
+                print(f"Summary of Per-detector TNs: {det_metrics['tn_detector_summary']}")
+
+
+        # TODO: Implement summary report
+        # TODO: Find a way to get the code above to be reused 
+        # for both stdout and summary report file.
+        """
+        if self.summary_report_file:
+            with open(self.summary_report_file, "a") as f:
+                f.write(f"\nTrue Positives: {self.tp_count}\n")
+                f.write(f"True Negatives: {self.tn_count}\n")
+                f.write(f"False Positives: {self.fp_count}\n")
+                f.write(f"False Negatives: {self.fn_count}\n")
+                f.write(f"\nAccuracy: {metrics['accuracy']:.4f}\n")
+                f.write(f"Precision: {metrics['precision']:.4f}\n")
+                f.write(f"Recall: {metrics['recall']:.4f}\n")
+                f.write(f"F1 Score: {metrics['f1_score']:.4f}\n")
+                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
+                f.write(f"False Positive Rate: {metrics['fp_rate']:.4f}\n")
+                f.write(f"False Negative Rate: {metrics['fn_rate']:.4f}\n")
+                if self.total_calls > 0:
+                    f.write(f"Average duration: {metrics['avg_duration']:.4f} seconds\n")
+                f.write("\nLabel counts:\n")
+                for label, count in self.label_counts.items():
+                    f.write(f"{label}: {count}\n")
+        """
+
+    def print_label_stats(self):
+        """ Print label-wise false positives and false negatives.
+        """
+        print(f"\n--{DARK_GREEN}Label-wise False Positives and False Negatives:{RESET}--")
+        if not self.label_stats:
+            print(f"{DARK_YELLOW}No label stats available.{RESET}")
+            return
+        print(f"{dict(self.label_stats)}")
+        for label, stats in self.label_stats.items():
+            fp = stats.get("FP", 0)
+            fn = stats.get("FN", 0)
+            print(f"Label: {label}, False Positives: {fp}, False Negatives: {fn}")
+
 
     @staticmethod
     def is_subset(expected: dict, actual: dict):
@@ -299,7 +681,7 @@ class AIGuardManager:
         service: str = defaults.ai_guard_service,
         endpoint: str = defaults.ai_guard_endpoint,
     ):
-        self.efficacy = EfficacyTracker()
+        self.efficacy = EfficacyTracker(args=args)
 
         self.verbose = args.verbose
         self.debug = args.debug
@@ -330,9 +712,11 @@ class AIGuardManager:
                 else:
                     if detector.startswith("topic:"):
                         topic_name = detector.split(":", 1)[1]
-                        self._add_enabled_topic(topic_name)
+                        if topic_name not in self.valid_topics:
+                            self.enabled_topics.append(topic_name)
                     elif detector in self.valid_topics:
-                        self._add_enabled_topic(detector)
+                        if detector not in self.enabled_topics:
+                            self.enabled_topics.append(detector)
                     else:
                         if detector not in self.enabled_detectors:
                             self.enabled_detectors.append(detector)
@@ -370,6 +754,7 @@ class AIGuardManager:
         if set(self.benign_labels) & set(self.malicious_prompt_labels):
             raise ValueError("Benign and malicious prompt labels must not overlap.")            
 
+        # TODO: Should these all be moved into EfficacyTracker?
         self.blocked = 0
         self.error_responses: list[Response] = []
         self.errors: Counter = Counter()
@@ -379,9 +764,6 @@ class AIGuardManager:
         self.detected_topics: Counter = Counter()
         self.detected_languages: Counter = Counter()
         self.detected_code_languages: Counter = Counter()
-
-        self.label_counts = Counter()
-        self.label_stats = defaultdict(lambda: {"FP": 0, "FN": 0})        
 
 
     def add_error_response(self, response):
@@ -661,7 +1043,7 @@ class AIGuardManager:
 
         if label not in test.labels:
             test.labels.append(label)
-            if self.verbose:
+            if self.debug:
                 print(f"\t{DARK_GREEN}Added label: {label}{RESET}")
 
     def update_test_labels_from_expected_detectors(self, test: TestCase):
@@ -750,17 +1132,17 @@ class AIGuardManager:
 
     # TODO: Compare behavior with process_response and PromptDetectionManager._process_prompt_guard_response
     #       in prompt_lab.py:
-            # def process_response(self, prompt, response, is_injection, labels):
-            #     for label in labels:
-            #         self.label_counts[label] += 1
-            #     self._process_prompt_guard_response(prompt, response, is_injection, labels)    
     # _process_prompt_guard_response is looking at what is detected and what is expected, and then updating the
     # efficacy tracker with the results.
-    # is_injection here is the label - whethr it is a malicious prompt or not.
-    def report_call_results(self, test: TestCase, messages: List[Dict[str, str]], response):
-        if test and test.labels:
-            for label in test.labels:
-                self.label_counts[label] += 1
+    # is_injection here is the label - whether it is a malicious prompt or not.
+    # TODO: Need add_false_positive and add_false_negative methods to 
+    # AIGuardManager.  Have it update fp and fn counts and labels (rather than doing that throughout this code)
+    # , and also keep a collection of the TestCase objects that had false positives or false negatives.
+    def report_call_results(
+            self,
+            test: TestCase,
+            messages: List[Dict[str, str]],
+            response):
 
         if response is None:
             print(f"\n\t{DARK_YELLOW}Service failed with no response.{RESET}")
@@ -770,9 +1152,6 @@ class AIGuardManager:
             # TODO: Where do we record the error?  I think it's already recored but check.
             print(f"\n\t{DARK_YELLOW}Service failed with status code: {response.status_code}.{RESET}")
             return
-
-        if self.verbose:
-            print_response(messages, response)
 
         summary = response.json().get("summary", "None")
         result = response.json().get("result", {})
@@ -799,17 +1178,10 @@ class AIGuardManager:
         # [
         #     {"detector": "topic", "details": {"detected": True, "data": {"topics": [{"topic": "negative-sentiment", "confidence": 1.0}]}}}]
         # ]
-        ## TODO: Why don't we use get_detected_detectors_with_details here?
-        #       get_detected_detectors_with_details returns a list of dictionaries, but we want a dict
-        #       of detector names with their details.
-        #       get_detected_with_detail returns a dict of detector names with their details.
-        #       So we should use get_detected_with_detail here.
-        #       get_detected_detectors_with_details is used in the efficacy tracker to update the counts.
         detected_detectors = self.get_detected_with_detail(response.json())
         # Also grab the raw detectors dict from the API response for label extraction
         raw_detectors = response.json().get("result", {}).get("detectors", {})
 
-        # TODO: ARE WE DOING THIS MULTPLLE TIMES?  LIKE IN efficacy_tracker too?
         self.update_detected_counts(detected_detectors)
 
         # This will update the labels so that they contain whatever was in 
@@ -819,12 +1191,9 @@ class AIGuardManager:
         expected_detectors_labels = test.labels 
         actual_detectors_labels = self.labels_from_actual_detectors(raw_detectors)
 
-        if self.debug:
-            print(f"\t{DARK_YELLOW}Actual Detectors Labels: {actual_detectors_labels}{RESET}")
-            print(f"\t{DARK_YELLOW}Expected Detectors Labels: {expected_detectors_labels}{RESET}")
-        ### THIS IS WHERE THE CHECK OF EXPECTED VS ACTUAL DETECTORS HAPPENS
         fp_detected, fn_detected, fp_names, fn_names = (
             self.efficacy.update(
+                test,
                 expected_labels=expected_detectors_labels,
                 detected_detectors_labels=actual_detectors_labels,
                 benign_labels=self.benign_labels,
@@ -833,14 +1202,18 @@ class AIGuardManager:
         )
 
         if fp_detected or fn_detected:
+            
             if fp_detected:
                 print(f"\t{DARK_RED}False Positives Detected: {fp_names}")
             if fn_detected:
                 print(f"\t{DARK_RED}False Negatives Detected: {fn_names}")
+            print(f"\t{DARK_YELLOW}Actual Detectors Labels: {actual_detectors_labels}{RESET}")
+            print(f"\t{DARK_YELLOW}Expected Detectors Labels: {expected_detectors_labels}{RESET}")
 
-            print(
-                f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:3])}"
-            )  # Show only the first 3 messages for brevity
+            if self.verbose:
+                print(
+                    f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:2])}"
+                )  # Show only the first 2 messages for brevity
 
             print(f"{RESET}")
 
@@ -852,6 +1225,7 @@ class AIGuardManager:
         if len(self.errors) == 0:
             return
         if self.verbose:
+            print(f"\n--- {DARK_RED}Errors encountered during AI Guard calls:{RESET} --")
             for error in self.error_responses:
                 try:
                     formatted_json_error = json.dumps(error.json(), indent=4)
@@ -859,24 +1233,74 @@ class AIGuardManager:
                 except Exception as e:
                     print(f"Error in print_errors: {e}")
                     print(f"Error response: {error}")
+        # TODO: Match prompt_lab.py's print_errors format
+        # TODO: Also make this happen as errors are added to the collection
+        #       and flush to disk so callers can monitor errors in real-time.
+        # if self.summary_report_file:
+        #     error_report_file = self.summary_report_file + ".errors.txt"
+        #     with open(error_report_file, "w") as f:
+        #         f.write("\nErrors:\n")
+        #         for error in self.error_responses:
+        #             try:
+        #                 formatted_json_error = json.dumps(error.json(), indent=4)
+        #                 f.write(f"{formatted_json_error}\n")
+        #             except Exception as e:
+        #                 f.write(f"Error in print_errors: {e}\n")
+        #                 f.write(f"Error response: {error}\n")        
 
     def print_summary(self):
-        print("\n--- Summary Info ---")
-        print(f"Total Calls: {self.efficacy.total_calls}")
-        print(f"Blocked: {self.blocked}")
-        print(f"FP Count: {self.efficacy.fp_count}")
-        print(f"FN Count: {self.efficacy.fn_count}")
-        print(f"Errors: {dict(self.errors)}")
-        print(f"Detected Detectors: {dict(self.detected_detectors)}")
-        print(f"Analyzers: {dict(self.detected_analyzers)}")
-        print(f"Malicious Entities: {dict(self.detected_malicious_entities)}")
-        print(f"Topics: {dict(self.detected_topics)}")
-        print(f"Languages: {dict(self.detected_languages)}")
-        print(f"Code Languages: {dict(self.detected_code_languages)}")
-        print("\n--- Efficacy Metrics ---")
-        metrics = self.efficacy.calculate_metrics()
-        for k, v in metrics.items():
-            print(f"{k}: {v:.4f}")
+        if not self.efficacy.total_calls:
+            print(f"{DARK_YELLOW}No AI Guard calls made.{RESET}")
+            return
+        
+        # TODO: Output the elements of this detectors to report in a more readable format.
+        # as summary info:
+        # The enabled_detectors
+        # The enabled_topics
+        # The detected_detectors
+        # The detected_topics
+        # The detectors for which there were non-zero efficacy values
+        # These are all the things for which there is something to report, 
+        # So they are the detectors_to_report.
+        non_zero_detectors = {
+            *self.efficacy.per_detector_fn.keys(),
+            *self.efficacy.per_detector_fp.keys(),
+            *self.efficacy.per_detector_tp.keys(),
+            *self.efficacy.per_detector_tn.keys(),
+        }
+        detectors_to_report = list(
+            {
+            *self.enabled_detectors,
+            *self.enabled_topics,
+            *self.detected_detectors.keys(),
+            *self.detected_topics.keys(),
+            *(k for k, v in self.efficacy.per_detector_fn.items() if v > 0),
+            *(k for k, v in self.efficacy.per_detector_fp.items() if v > 0),
+            *(k for k, v in self.efficacy.per_detector_tp.items() if v > 0),
+            *(k for k, v in self.efficacy.per_detector_tn.items() if v > 0),
+            }
+        )
+
+        self.efficacy.print_stats(enabled_detectors=detectors_to_report)
+        self.efficacy.print_label_stats()
+
+        ## TODO: Move this to its own method and clean it up.
+        # Maybe its already in EfficacyTracker?
+        #  Printing the detected_detectors and detected_topics:
+        if self.detected_detectors:
+            print(f"\n{DARK_YELLOW}Detected Detectors: {dict(self.detected_detectors)}{RESET}")
+        if self.detected_topics:
+            print(f"\n{DARK_YELLOW}Detected Topics: {dict(self.detected_topics)}{RESET}")
+        if self.detected_analyzers:
+            print(f"\n{DARK_YELLOW}Detected Analyzers: {dict(self.detected_analyzers)}{RESET}")
+        if self.detected_malicious_entities:
+            print(f"\n{DARK_YELLOW}Detected Malicious Entities: {dict(self.detected_malicious_entities)}{RESET}")
+        if self.detected_languages:
+            print(f"\n{DARK_YELLOW}Detected Languages: {dict(self.detected_languages)}{RESET}")
+        if self.detected_code_languages:
+            print(f"\n{DARK_YELLOW}Detected Code Languages: {dict(self.detected_code_languages)}{RESET}")
+
+        self.print_errors()
 
     def _ai_guard_data(
         self,
@@ -1130,17 +1554,21 @@ class AIGuardTests:
         @rate_limited(args.rps)
         def process_prompt(aig, test: TestCase, index, total_rows):
             with semaphore:
-                progress = (index + 1) / total_rows * 100
-                print("\r\033[2K", end="")
-                print(f"{progress:.2f}%", end="\r", flush=True)
-                response = aig.ai_guard_test(test)
-                # TODO: Check promptlab behavior:
-                # Use the first user message (if available) for logging
-                # prompt_text = next((msg["content"] for msg in messages if msg["role"] == "user"), "No User Message")                
-                if response.status_code != 200 and aig.verbose:
-                    print_response(test.messages, response)
-                else:
-                    aig.report_call_results(test, test.messages, response)
+                try:
+                    progress = (index + 1) / total_rows * 100
+                    print("\r\033[2K", end="")
+                    print(f"{progress:.2f}%", end="\r", flush=True)
+                    response = aig.ai_guard_test(test)
+                    # TODO: Check promptlab behavior:
+                    # Use the first user message (if available) for logging
+                    # prompt_text = next((msg["content"] for msg in messages if msg["role"] == "user"), "No User Message")                
+                    if response.status_code != 200 and aig.verbose:
+                        print_response(test.messages, response)
+                    else:
+                        aig.report_call_results(test, test.messages, response)
+                except Exception as e:
+                    print(f"\n{DARK_RED}Error processing prompt {index + 1}/{total_rows}: {e}{RESET}")
+                    aig.add_error_response(e)
 
         def process_prompts():
             print(f"\nProcessing {len(self.tests)} prompts with {max_workers} workers")
