@@ -32,20 +32,25 @@ from utils.utils import (
     remove_outer_quotes,
     rate_limited,
 )
-from utils.colors import DARK_RED, DARK_YELLOW, DARK_GREEN, RESET, DARK_BLUE
+from utils.colors import RED, DARK_RED, MAGENTA, YELLOW, DARK_YELLOW, GREEN, DARK_GREEN, RESET
 from defaults import defaults
 
 
 class EfficacyTracker:
     class FailedTestCase:
-        def __init__(self, test: TestCase, expected_label: str, detector_seen: str):
+        def __init__(self, 
+                     test: TestCase, 
+                     expected_label: str = "", 
+                     detector_seen: str = "",
+                     detector_not_seen: str = ""):
             self.test: TestCase = test
             self.expected_label: str = expected_label
             self.detector_seen: str = detector_seen
+            self.detector_not_seen: str = detector_not_seen
 
     def __init__(
-            self, 
-            args=None, 
+            self,
+            args=None,
             keep_tp_and_tn_tests: bool = False # whether to keep copies of TP and TN test case objs for reporting later
             ):
         self.args = args
@@ -99,11 +104,15 @@ class EfficacyTracker:
         """
         if test not in self.false_positives:
             self.false_positives.append(
-                EfficacyTracker.FailedTestCase(test, expected_label,
-                                               detector_seen)
+                EfficacyTracker.FailedTestCase(
+                    test,
+                    expected_label=expected_label,
+                    detector_seen=detector_seen
+                )
             )
         self.fp_count += 1
         self.per_detector_fp[detector_seen] += 1
+        self.label_stats[expected_label]["FP"] += 1
 
         if self.verbose:
             print(f"{DARK_RED}FP: expected_label '{expected_label}' but detected '{detector_seen}'")
@@ -123,12 +132,16 @@ class EfficacyTracker:
         Add a test case to the true positives collection.
         This is used to track test cases where a detection was not expected
         for expected_label and it was not seen.
+        TODO: Get rid of FailedTestCase, since we've added detector_not_seen, etc. to the base TestCase class.
         """
         if test not in self.true_negatives:
             if self.track_tp_and_tn_cases:
                 self.true_negatives.append(
-                    EfficacyTracker.FailedTestCase(test, expected_label,
-                                                   detector_not_seen)
+                    EfficacyTracker.FailedTestCase(
+                        test,
+                        expected_label=expected_label,
+                        detector_not_seen=detector_not_seen
+                    )
                 )
         self.tn_count += 1
         self.per_detector_tn[detector_not_seen] += 1
@@ -154,8 +167,11 @@ class EfficacyTracker:
         if test not in self.true_positives:
             if self.track_tp_and_tn_cases:
                 self.true_positives.append(
-                    EfficacyTracker.FailedTestCase(test, expected_label,
-                                                detector_seen)
+                    EfficacyTracker.FailedTestCase(
+                        test,
+                        expected_label=expected_label,
+                        detector_seen=detector_seen
+                    )
                 )
         self.tp_count += 1
         self.per_detector_tp[detector_seen] += 1
@@ -180,11 +196,14 @@ class EfficacyTracker:
         """
         if test not in self.false_negatives:
             self.false_negatives.append(
-                EfficacyTracker.FailedTestCase(test, expected_label,
-                                               detector_not_seen)
+                EfficacyTracker.FailedTestCase(
+                    test, 
+                    expected_label=expected_label,
+                    detector_not_seen=detector_not_seen)
             )
         self.fn_count += 1
         self.per_detector_fn[detector_not_seen] += 1
+        self.label_stats[expected_label]["FN"] += 1
 
         if self.verbose:
             print(f"{DARK_RED}FN: expected detection: '{detector_not_seen}' for expected_label:'{expected_label}'")
@@ -540,93 +559,102 @@ class EfficacyTracker:
 
     def print_stats(self, enabled_detectors: List[str] = None):
         """ Print a summary of the efficacy statistics.
-        TODO: Output label stats?
-        TODO: Make reusable for stdout and summary report file.
         """
-        metrics = self.calculate_metrics()
-        print(f"\n---{DARK_GREEN}AIGuard Summary{RESET}---")
-        for detector, det_metrics in metrics.items():
-            # Filter unused detectors
-            if detector not in enabled_detectors and detector != "overall":
-                ## TODO: This isn't the complete check - 
-                ## Need to account for detectors that were enabled via overrides or test cases
-                continue
+        def _print_all_stats(writeln):
+            metrics = self.calculate_metrics()
+            writeln(f"\n--{GREEN}AIGuard Summary{RESET}--")
+            if self.args and self.args.report_title:
+                writeln(f"\n{DARK_GREEN}Report Title: {self.args.report_title}{RESET}")
+            for detector, det_metrics in metrics.items():
+                # Filter unused detectors
+                if detector not in enabled_detectors and detector != "overall":
+                    ## TODO: This isn't the complete check - 
+                    ## Need to account for detectors that were enabled via overrides or test cases
+                    continue
 
-            if detector == "overall":
-               print(f"\n--{DARK_GREEN}Overall Counts:{RESET}--")
-            else:
-                print(f"\n--{DARK_GREEN}Detector: {detector}{RESET}--")
+                if detector == "overall":
+                   writeln(f"\n--{GREEN}Overall Counts:{RESET}--")
+                else:
+                    writeln(f"\n--{GREEN}Detector: {detector}{RESET}--")
 
-            # Summarize detectors with zero counts
-            if det_metrics['total_count'] == 0:
-                print(f"{DARK_YELLOW}No non-zero results for this detector.{RESET}")
-                continue
+                # Summarize detectors with zero counts
+                if det_metrics['total_count'] == 0:
+                    writeln(f"{DARK_YELLOW}No non-zero results for this detector.{RESET}")
+                    continue
 
-            print(f"{DARK_GREEN}True Positives: {det_metrics['tp_count']}{RESET}")
-            print(f"{DARK_GREEN}True Negatives: {det_metrics['tn_count']}{RESET}")
-            print(f"{DARK_RED}False Positives: {det_metrics['fp_count']}{RESET}")
-            print(f"{DARK_RED}False Negatives: {det_metrics['fn_count']}{RESET}")
-            print(f"\nAccuracy: {DARK_GREEN}{det_metrics['accuracy']:.4f}{RESET}")
-            print(f"Precision: {DARK_GREEN}{det_metrics['precision']:.4f}{RESET}")
-            print(f"Recall: {DARK_GREEN}{det_metrics['recall']:.4f}{RESET}")
-            print(f"F1 Score: {DARK_GREEN}{det_metrics['f1_score']:.4f}{RESET}")
-            print(f"Specificity: {DARK_GREEN}{det_metrics['specificity']:.4f}{RESET}")
-            print(f"False Positive Rate: {DARK_RED}{det_metrics['fp_rate']:.4f}{RESET}")
-            print(f"False Negative Rate: {DARK_RED}{det_metrics['fn_rate']:.4f}{RESET}")
-            if detector == "overall":
-                print(f"\nAverage duration: {det_metrics['avg_duration']:.4f} seconds")
-                print(f"Total calls: {det_metrics['total_calls']}")
-                print("--- Info on Test Cases Saved for Reporting ---")
-                print(f"NOTE: These are the test cases that had non-zero FP/FN/TP/TN stats.")
-                print(f"NOTE: TP and TN cases not saved unless track_tp_and_tn_cases is True.")
-                print(f"      track_tp_and_tn_cases: {self.track_tp_and_tn_cases}")
-                print(f"Total Test Cases Saved: {det_metrics['total_saved_test_count']}")
-                print(f"Saved Test Cases with FPs: {det_metrics['fp_saved_test_count']}")
-                print(f"Saved Test Cases with FNs: {det_metrics['fn_saved_test_count']}")
-                print(f"Saved Test Cases with TPs: {det_metrics['tp_saved_test_count']}")
-                print(f"Saved Test Cases with TNs: {det_metrics['tn_saved_test_count']}")
-                print(f"\nSummary of Per-detector TPs: {det_metrics['tp_detector_summary']}")
-                print(f"Summary of Per-detector FPs: {det_metrics['fp_detector_summary']}")
-                print(f"Summary of Per-detector FNs: {det_metrics['fn_detector_summary']}")
-                print(f"Summary of Per-detector TNs: {det_metrics['tn_detector_summary']}")
+                writeln(f"{DARK_RED}False Positives: {det_metrics['fp_count']}{RESET}")
+                writeln(f"{DARK_RED}False Negatives: {det_metrics['fn_count']}{RESET}")
+                writeln(f"{DARK_GREEN}True Positives: {det_metrics['tp_count']}{RESET}")
+                writeln(f"{DARK_GREEN}True Negatives: {det_metrics['tn_count']}{RESET}")
+                writeln(f"\nAccuracy: {DARK_GREEN}{det_metrics['accuracy']:.4f}{RESET}")
+                writeln(f"Precision: {DARK_GREEN}{det_metrics['precision']:.4f}{RESET}")
+                writeln(f"Recall: {DARK_GREEN}{det_metrics['recall']:.4f}{RESET}")
+                writeln(f"F1 Score: {DARK_GREEN}{det_metrics['f1_score']:.4f}{RESET}")
+                writeln(f"Specificity: {DARK_GREEN}{det_metrics['specificity']:.4f}{RESET}")
+                writeln(f"False Positive Rate: {DARK_RED}{det_metrics['fp_rate']:.4f}{RESET}")
+                writeln(f"False Negative Rate: {DARK_RED}{det_metrics['fn_rate']:.4f}{RESET}")
+                if detector == "overall":
+                    writeln(f"\nAverage duration: {det_metrics['avg_duration']:.4f} seconds")
+                    writeln(f"Total calls: {det_metrics['total_calls']}")
+                    writeln(f"\n{GREEN}-- Info on Test Cases Saved for Reporting {RESET}--")
+                    writeln(f"NOTE: These are the test cases that had non-zero FP/FN/TP/TN stats.")
+                    writeln(f"NOTE: TP and TN cases not saved unless track_tp_and_tn_cases is True.")
+                    writeln(f"      track_tp_and_tn_cases: {self.track_tp_and_tn_cases}")
+                    writeln(f"Total Test Cases Saved: {det_metrics['total_saved_test_count']}")
+                    if det_metrics['total_saved_test_count'] == 0:
+                        writeln(f"{DARK_YELLOW}No test cases saved.{RESET}")
+                    else:
+                        writeln(f"{DARK_RED}Saved Test Cases with FPs: {det_metrics['fp_saved_test_count']}{RESET}")
+                        writeln(f"{DARK_RED}Saved Test Cases with FNs: {det_metrics['fn_saved_test_count']}{RESET}")
+                        writeln(f"{DARK_GREEN}Saved Test Cases with TPs: {det_metrics['tp_saved_test_count']}{RESET}")
+                        writeln(f"{DARK_GREEN}Saved Test Cases with TNs: {det_metrics['tn_saved_test_count']}{RESET}")
+                    ## TODO: Don't out put these if they are empty
+                    writeln(f"{DARK_RED}Summary of Per-detector FPs: {det_metrics['fp_detector_summary']}{RESET}")
+                    writeln(f"{DARK_RED}Summary of Per-detector FNs: {det_metrics['fn_detector_summary']}{RESET}")
+                    writeln(f"\n{DARK_GREEN}Summary of Per-detector TPs: {det_metrics['tp_detector_summary']}{RESET}")
+                    writeln(f"{DARK_GREEN}Summary of Per-detector TNs: {det_metrics['tn_detector_summary']}{RESET}")
+            if self.args and self.args.print_label_stats:
+                self._print_label_stats(writeln=writeln)
+            if self.args and self.args.print_fps:
+                writeln(f"\n--{GREEN}False Positives:{RESET}--")
+                if not self.false_positives:
+                    writeln(f"{DARK_YELLOW}No false positives recorded.{RESET}")
+                else:
+                    for fp_case in self.false_positives:
+                        writeln(f"{DARK_RED}Test Case: {fp_case.test.index}, Expected Label: {fp_case.expected_label}, Detected: {fp_case.detector_seen}")
+                        writeln(f"\tMessages: {formatted_json_str(fp_case.test.messages[:3])}")
+            if self.args and self.args.print_fns:
+                writeln(f"\n--{GREEN}False Negatives:{RESET}--")
+                if not self.false_negatives:
+                    writeln(f"{DARK_YELLOW}No false negatives recorded.{RESET}")
+                else:
+                    for fn_case in self.false_negatives:
+                        writeln(f"{DARK_RED}Test Case: {fn_case.test.index}, Expected Label: {fn_case.expected_label}, Not Detected: {fn_case.detector_not_seen}")
+                        writeln(f"\tMessages: {formatted_json_str(fn_case.test.messages[:3])}")
 
+        if self.args and self.args.summary_report_file:
+            with open(self.args.summary_report_file, "w") as f:
+                def writeln(line: str = ""):
+                    print(line)
+                    f.write(line + "\n")
+                _print_all_stats(writeln)
+        else:
+            def writeln(line: str = ""):
+                print(line)
+            _print_all_stats(writeln)
 
-        # TODO: Implement summary report
-        # TODO: Find a way to get the code above to be reused 
-        # for both stdout and summary report file.
-        """
-        if self.summary_report_file:
-            with open(self.summary_report_file, "a") as f:
-                f.write(f"\nTrue Positives: {self.tp_count}\n")
-                f.write(f"True Negatives: {self.tn_count}\n")
-                f.write(f"False Positives: {self.fp_count}\n")
-                f.write(f"False Negatives: {self.fn_count}\n")
-                f.write(f"\nAccuracy: {metrics['accuracy']:.4f}\n")
-                f.write(f"Precision: {metrics['precision']:.4f}\n")
-                f.write(f"Recall: {metrics['recall']:.4f}\n")
-                f.write(f"F1 Score: {metrics['f1_score']:.4f}\n")
-                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
-                f.write(f"False Positive Rate: {metrics['fp_rate']:.4f}\n")
-                f.write(f"False Negative Rate: {metrics['fn_rate']:.4f}\n")
-                if self.total_calls > 0:
-                    f.write(f"Average duration: {metrics['avg_duration']:.4f} seconds\n")
-                f.write("\nLabel counts:\n")
-                for label, count in self.label_counts.items():
-                    f.write(f"{label}: {count}\n")
-        """
-
-    def print_label_stats(self):
+    def _print_label_stats(self, writeln):
         """ Print label-wise false positives and false negatives.
         """
-        print(f"\n--{DARK_GREEN}Label-wise False Positives and False Negatives:{RESET}--")
+        writeln(f"\n--{GREEN}Label-wise False Positives and False Negatives:{RESET}--")
         if not self.label_stats:
-            print(f"{DARK_YELLOW}No label stats available.{RESET}")
+            writeln(f"{DARK_YELLOW}No label stats available.{RESET}")
             return
-        print(f"{dict(self.label_stats)}")
+        writeln(f"Label Stats: {dict(self.label_stats)}")
         for label, stats in self.label_stats.items():
             fp = stats.get("FP", 0)
             fn = stats.get("FN", 0)
-            print(f"Label: {label}, False Positives: {fp}, False Negatives: {fn}")
+            writeln(f"\tLabel: {label}, False Positives: {fp}, False Negatives: {fn}")
 
 
     @staticmethod
@@ -1166,7 +1194,8 @@ class AIGuardManager:
             else:
                 print(f"\t{DARK_GREEN}Allowed")
 
-        print(f"\tSummary: {summary}{RESET}")
+        if self.verbose:
+            print(f"\tSummary: {summary}{RESET}")
 
         # Extract info on detected detectors and their sub-details
         # This will return a list of dictionaries with the detector name and its details.
@@ -1201,25 +1230,18 @@ class AIGuardManager:
             )
         )
 
-        if fp_detected or fn_detected:
-            
+        if fp_detected or fn_detected:            
             if fp_detected:
-                print(f"\t{DARK_RED}False Positives Detected: {fp_names}")
+                print(f"\t{DARK_RED}False Positives Detected: {fp_names}{RESET}")
             if fn_detected:
-                print(f"\t{DARK_RED}False Negatives Detected: {fn_names}")
+                print(f"\t{DARK_RED}False Negatives Detected: {fn_names}{RESET}")
             print(f"\t{DARK_YELLOW}Actual Detectors Labels: {actual_detectors_labels}{RESET}")
             print(f"\t{DARK_YELLOW}Expected Detectors Labels: {expected_detectors_labels}{RESET}")
 
             if self.verbose:
                 print(
-                    f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:2])}"
+                    f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:2])}{RESET}"
                 )  # Show only the first 2 messages for brevity
-
-            print(f"{RESET}")
-
-
-        print("\n")
-
 
     def print_errors(self):
         if len(self.errors) == 0:
@@ -1282,7 +1304,6 @@ class AIGuardManager:
         )
 
         self.efficacy.print_stats(enabled_detectors=detectors_to_report)
-        self.efficacy.print_label_stats()
 
         ## TODO: Move this to its own method and clean it up.
         # Maybe its already in EfficacyTracker?
@@ -1558,6 +1579,7 @@ class AIGuardTests:
                     progress = (index + 1) / total_rows * 100
                     print("\r\033[2K", end="")
                     print(f"{progress:.2f}%", end="\r", flush=True)
+                    test.index = index
                     response = aig.ai_guard_test(test)
                     # TODO: Check promptlab behavior:
                     # Use the first user message (if available) for logging

@@ -175,7 +175,12 @@ class TestCase:
     messages: List[Dict[str, str]] = field(default_factory=list)
     expected_detectors: ExpectedDetectors = field(default_factory=ExpectedDetectors)
     labels: Optional[List[str]] = field(default_factory=list)  # Optional labels for the test case
-
+    # Fields that will only be used to track the detectors seen during the test case execution
+    # This is not part of the expected output, but is useful for runtime checks
+    # detectors_seen and not_seen are now in the ExpectedDetectors FailedTestCase class
+    # detectors_seen: Optional[List[str]] = field(default_factory=list)  # Detectors that have been seen in the test case
+    # detectors_not_seen: Optional[List[str]] = field(default_factory=list)  # Detectors that were expected but not seen in the test case
+    index: Optional[int] = None  # Optional index of the test case in the input, useful for tracking
 
     def __init__(
         self,
@@ -186,6 +191,8 @@ class TestCase:
     ):
         self.messages = messages
         self.labels = labels if labels is not None else []
+        # self.detectors_seen = []
+        # self.detectors_not_seen = []
         # Ensure messages is a list of dictionaries
         if not isinstance(self.messages, list) or not all(isinstance(msg, dict) for msg in self.messages):
             raise ValueError("Messages must be a list of dictionaries.")

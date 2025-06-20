@@ -54,11 +54,11 @@ def main():
         type=str,
         default=defaults.default_detectors_str,
         help=(
-f"""Comma separated list of detectors to use default: 
+f"""Comma separated list of detectors to use default:
 "{defaults.default_detectors_str}"
 Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.
-Available topic names: toxicity, self-harm-and-violence, roleplay, weapons, criminal-conduct,
-"{defaults.valid_topics_str}"
+Available topic names:
+{defaults.valid_topics_str}
 """
         ),
     )
@@ -132,22 +132,53 @@ that override the recipe with explicit detectors.
 
     output_group = parser.add_argument_group("Output and reporting")
     output_group.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output (FPs, FNs as they occur, full errors).",
+        "--report_title",
+        type=str,
+        default=None,
+        help="Optional title in report summary"
     )
-    output_group.add_argument("--debug", action="store_true", help="Enable debug output (default: False)")
-    output_group.add_argument("--report_title", type=str, default=None, help="Optional title in report summary")
-    output_group.add_argument("--summary_report_file", type=str, default=None, help="Optional summary report file name")
-    output_group.add_argument("--print_fps", action="store_true", help="Print false positives at the end")
-    output_group.add_argument("--print_fns", action="store_true", help="Print false negatives at the end")
-    output_group.add_argument("--fps_out_csv", type=str, help="Output CSV for false positives")
-    output_group.add_argument("--fns_out_csv", type=str, help="Output CSV for false negatives")
+    output_group.add_argument(
+        "--summary_report_file",
+        type=str,
+        default=None,
+        help="Optional summary report file name"
+    )
+    output_group.add_argument(
+        "--fps_out_csv",
+        type=str,
+        help="Output CSV for false positives"
+    )
+    output_group.add_argument(
+        "--fns_out_csv",
+        type=str,
+        help="Output CSV for false negatives"
+    )
     output_group.add_argument(
         "--print_label_stats",
         action="store_true",
         help="Display per-label stats (FP/FN counts)",
-    )    
+    )
+    output_group.add_argument(
+        "--print_fps",
+        action="store_true",
+        help="Print false positives after summary"
+    )
+    output_group.add_argument(
+        "--print_fns",
+        action="store_true",
+        help="Print false negatives after summary"
+    )
+    output_group.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output (FPs, FNs as they occur, full errors).",
+    )
+    output_group.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug output (default: False)"
+    )
+
 
     assumption_group = parser.add_argument_group("Assumptions for plain text prompts")
     group_tp_tn = assumption_group.add_mutually_exclusive_group(required=False)
@@ -184,7 +215,6 @@ that override the recipe with explicit detectors.
 
     args = parser.parse_args()
 
-    prompt = args.prompt
     recipe = args.recipe
     system_prompt = args.system_prompt
 
