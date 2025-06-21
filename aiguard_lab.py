@@ -217,10 +217,13 @@ that override the recipe with explicit detectors.
 
     recipe = args.recipe
     system_prompt = args.system_prompt
+    if args.prompt:
+        # If a single prompt, set rps to 1
+        args.rps = 1
 
     aig = AIGuardManager(args)
     settings = Settings(system_prompt, recipe)
-    aig_test = AIGuardTests(settings, args)
+    aig_test = AIGuardTests(settings, aig, args)
     aig_test.process_all_prompts(args, aig)
 
 

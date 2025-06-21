@@ -4,6 +4,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from config.settings import Settings  # Assuming Settings is already defined in config/settings.py
+from defaults import defaults  # Assuming defaults is already defined in defaults/defaults.py
 
 """
 Want expected_detectors to look like what AI Guard returns, e.g.:
@@ -166,6 +167,41 @@ class ExpectedDetectors:
     malicious_entity: Optional[EntityResult]      = None
     custom_entity:    Optional[EntityResult]      = None
 
+    def get_expected_detector_labels(self) -> list[str]:
+        expected_labels: list[str] = []
+
+        if self.prompt_injection and self.prompt_injection.detected:
+            expected_labels.append("malicious-prompt")
+
+        if self.topic and self.topic.detected:
+            if self.topic.topics:
+                for topic in self.topic.topics:
+                    expected_labels.append(f"topic:{topic.topic}")
+            else:
+                expected_labels.append("topic:any")
+
+        # TODO: THIS IS UNLIKELY CORRECT BUT ONLY SUPPORTING MALICOUS-PROMPT AND TOPIC FOR NOW
+        if self.code_detection and self.code_detection.detected:
+            expected_labels.append("code")
+
+        # TODO: THIS IS UNLIKELY CORRECT BUT ONLY SUPPORTING MALICOUS-PROMPT AND TOPIC FOR NOW
+        if self.language_detection and self.language_detection.detected:
+            expected_labels.append("language")
+
+        # TODO: THIS IS UNLIKELY CORRECT BUT ONLY SUPPORTING MALICOUS-PROMPT AND TOPIC FOR NOW
+        if self.malicious_entity and self.malicious_entity.detected:
+            entities = self.malicious_entity.data.get("entities", [])
+            if entities:
+                expected_labels.append("malicious-entity")
+
+        # TODO: THIS IS UNLIKELY CORRECT BUT ONLY SUPPORTING MALICOUS-PROMPT AND TOPIC FOR NOW
+        if self.custom_entity and self.custom_entity.detected:
+            entities = self.custom_entity.data.get("entities", [])
+            if entities:
+                expected_labels.append("custom-entity")
+
+        return expected_labels
+
 
 @dataclass
 class TestCase:
@@ -174,7 +210,7 @@ class TestCase:
     settings: Optional[Settings] = None
     messages: List[Dict[str, str]] = field(default_factory=list)
     expected_detectors: ExpectedDetectors = field(default_factory=ExpectedDetectors)
-    labels: Optional[List[str]] = field(default_factory=list)  # Optional labels for the test case
+    label: Optional[List[str]] = field(default_factory=list)  # Optional labels for the test case
     # Fields that will only be used to track the detectors seen during the test case execution
     # This is not part of the expected output, but is useful for runtime checks
     # detectors_seen and not_seen are now in the ExpectedDetectors FailedTestCase class
@@ -185,21 +221,20 @@ class TestCase:
     def __init__(
         self,
         messages: List[dict],
-        labels: Optional[List[str]] = None,
+        label: Optional[List[str]] = None,
         settings: Optional[Settings] = None,
         expected_detectors: Optional[dict] = None,
     ):
         self.messages = messages
-        self.labels = labels if labels is not None else []
-        # self.detectors_seen = []
-        # self.detectors_not_seen = []
+        self.label = label if label is not None else []
+
         # Ensure messages is a list of dictionaries
         if not isinstance(self.messages, list) or not all(isinstance(msg, dict) for msg in self.messages):
             raise ValueError("Messages must be a list of dictionaries.")
         # Ensure labels is a list of strings
-        if labels is not None and not isinstance(labels, list):
+        if label is not None and not isinstance(label, list):
             raise ValueError("Labels must be a list of strings.")
-        if labels is not None and not all(isinstance(label, str) for label in labels):
+        if label is not None and not all(isinstance(label, str) for label in label):
             raise ValueError("All labels must be strings.")
         # Optional Settings object that can hold recipe, system_prompt, overrides, and log_fields.
         if settings is not None:
@@ -301,5 +336,60 @@ class TestCase:
             self.settings = Settings()
         self.settings.recipe = default_recipe
 
+    def ensure_valid_labels(
+            self,
+            allowed_labels: list[str]) -> list[str]:
+        """Ensures that labels are valid according to the allowed_labels list."""
+        if self.label is None:
+            self.label = []
+        if self.label == []:
+            return self.label
+
+        # Ensure that labels is a list of lowercase strings with no leading or trailing whitespace:
+        labels = [lbl.strip().lower() for lbl in self.label if isinstance(lbl, str)]
+        self.label = labels
+        # Ensure each label is included only if it is in allowed_labels, and occurs at most once
+        valid_labels = list(set(lbl for lbl in self.label if lbl in allowed_labels))
+        if not valid_labels:
+            # TODO: there can be empty labels.
+            # raise ValueError(f"No valid labels found. Allowed labels are: {allowed_labels}")
+            self.label = []
+        else:
+            # If there are valid labels, set self.label to the valid labels
+            # This ensures that we only keep labels that are in the allowed list
+            # and removes duplicates.
+            self.label = valid_labels
+            # Remove any labels that are not in the valid detectors or topics
+            # This is to ensure that only labels we have a chance of detecting are measured.
+            for label in self.label[:]:  # Use a copy of the list to avoid modifying while iterating
+                if label not in defaults.valid_detectors and label not in defaults.valid_topics:
+                    labels.remove(label)
+            if not labels:
+                # If no valid labels remain, set self.label to an empty list
+                self.label = []
+
+        return self.label
+
     def __repr__(self):
         return f"TestCase(settings={self.settings!r}, messages={self.messages!r})"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TestCase":
+        """
+        Hydrate a TestCase instance from a raw dict.
+        """
+        messages = data.get("messages", [])
+        # Hydrate settings if dict, otherwise pass through
+        settings_data = data.get("settings")
+        settings = Settings.from_dict(settings_data) if hasattr(Settings, "from_dict") and isinstance(settings_data, dict) else settings_data
+        # Hydrate expected_detectors
+        ed_data = data.get("expected_detectors")
+        expected_detectors = ExpectedDetectors.from_dict(ed_data) if hasattr(ExpectedDetectors, "from_dict") else ed_data
+        # Labels
+        labels = data.get("label", []) or data.get("labels", [])
+        return cls(
+            messages=messages,
+            label=labels,
+            settings=settings,
+            expected_detectors=expected_detectors,
+        )

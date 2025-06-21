@@ -63,7 +63,7 @@ def pangea_post_api(service, endpoint, data, skip_cache=False, token=ai_guard_to
         return create_error_response(400, f"Bad Request: {e}")
 
 
-def pangea_get_api(service, endpoint, token=ai_guard_token, base_url=base_url):
+def pangea_get_api(endpoint, token=ai_guard_token, base_url=base_url):
     try:
         url = urljoin(base_url, endpoint) # TODO: fix this to use service, endpoint, domain or base_url
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}

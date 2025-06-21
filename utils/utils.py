@@ -9,6 +9,21 @@ from typing import List, Dict
 from utils.colors import DARK_RED, DARK_YELLOW, GREEN, RESET
 
 
+def apply_synonyms(labels, synonyms, replacement):
+    """
+    Replace any label in labels that matches a synonym in synonyms with the specified replacement.
+    Remove duplicates from the resulting list.
+    """
+    if isinstance(labels, str):
+        labels = [labels]
+
+    return list(set(
+        replacement if label in synonyms else label
+        for label in labels
+        if isinstance(label, str)
+    ))            
+
+
 def formatted_json_str(json_data: dict) -> str:
     return json.dumps(json_data, indent=4)
 

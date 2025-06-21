@@ -90,3 +90,17 @@ class Settings:
 
     def __repr__(self):
         return f"Settings(system_prompt={self.system_prompt!r}, recipe={self.recipe!r}, overrides={self.overrides!r}, log_fields={self.log_fields!r})"
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "Settings":
+        """
+        Hydrate a Settings instance from a raw dict.
+        """
+        if not data:
+            return cls()
+        return cls(
+            system_prompt=data.get("system_prompt"),
+            recipe=data.get("recipe", None),
+            overrides=Overrides.from_dict(data.get("overrides")) if hasattr(Overrides, "from_dict") else data.get("overrides"),
+            log_fields=LogFields.from_dict(data.get("log_fields")) if hasattr(LogFields, "from_dict") else data.get("log_fields"),
+        )

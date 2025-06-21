@@ -10,12 +10,27 @@ class CodeDetection:
     disabled: Optional[bool] = None
     action: Optional[str] = None
 
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "CodeDetection":
+        if not data:
+            return cls()
+        return cls(
+            disabled=data.get("disabled"),
+            action=data.get("action"),
+        )
+
 
 @dataclass
 class Competitors:
     disabled: Optional[bool] = None
     action: Optional[str] = None
     competitors: Optional[list[str]] = None
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "Competitors":
+        if not data:
+            return cls()
+        return cls(**data)
 
 
 @dataclass
@@ -24,6 +39,12 @@ class LanguageDetection:
     action: Optional[str] = None
     languages: Optional[list[str]] = None
 
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "LanguageDetection":
+        if not data:
+            return cls()
+        return cls(**data)
+
 
 @dataclass
 class MaliciousEntity:
@@ -31,6 +52,12 @@ class MaliciousEntity:
     url: Optional[str] = None
     ip_address: Optional[str] = None
     domain: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "MaliciousEntity":
+        if not data:
+            return cls()
+        return cls(**data)
 
 
 @dataclass
@@ -62,11 +89,23 @@ class PIIEntity:
     us_passport: Optional[str] = None
     us_ssn: Optional[str] = None
 
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "PIIEntity":
+        if not data:
+            return cls()
+        return cls(**data)
+
 
 @dataclass
 class PromptInjection:
     disabled: Optional[bool] = None
     action: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "PromptInjection":
+        if not data:
+            return cls()
+        return cls(**data)
 
 
 @dataclass
@@ -100,6 +139,12 @@ class SecretsDetection:
     twilio_api_key: Optional[str] = None
     pangea_token: Optional[str] = None
 
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "SecretsDetection":
+        if not data:
+            return cls()
+        return cls(**data)
+
 
 @dataclass
 class Topic:
@@ -107,3 +152,9 @@ class Topic:
     action: Optional[str] = None
     threshold: Optional[float] = None
     topics: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "Topic":
+        if not data:
+            return cls()
+        return cls(**data)

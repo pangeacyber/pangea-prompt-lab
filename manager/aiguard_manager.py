@@ -6,6 +6,7 @@ import sys
 import time
 import requests
 import json
+import csv
 
 
 from collections import Counter, defaultdict
@@ -24,8 +25,10 @@ from config.settings import Settings
 from config.overrides import Overrides
 from config.log_fields import LogFields
 from testcase.testcase import TestCase, ExpectedDetectors
+        
 from api.pangea_api import pangea_post_api, poll_request
 from utils.utils import (
+    apply_synonyms,
     get_duration,
     formatted_json_str,
     print_response,
@@ -36,11 +39,12 @@ from utils.colors import RED, DARK_RED, MAGENTA, YELLOW, DARK_YELLOW, GREEN, DAR
 from defaults import defaults
 
 
+
 class EfficacyTracker:
     class FailedTestCase:
         def __init__(self, 
                      test: TestCase, 
-                     expected_label: str = "", 
+                     expected_label: str = "",
                      detector_seen: str = "",
                      detector_not_seen: str = ""):
             self.test: TestCase = test
@@ -112,7 +116,7 @@ class EfficacyTracker:
             )
         self.fp_count += 1
         self.per_detector_fp[detector_seen] += 1
-        self.label_stats[expected_label]["FP"] += 1
+        self.label_stats[detector_seen]["FP"] += 1
 
         if self.verbose:
             print(f"{DARK_RED}FP: expected_label '{expected_label}' but detected '{detector_seen}'")
@@ -125,7 +129,7 @@ class EfficacyTracker:
         self,
         test: TestCase,
         detector_not_seen: str,
-        expected_label: str = "benign"
+        expected_label: str = ""
     ):
         """
         TODO: MAY NOT WANT TO DO THIS - COULD BE NOISY (at least not keep every test case)
@@ -187,7 +191,7 @@ class EfficacyTracker:
             self,
             test: TestCase,
             detector_not_seen: str,
-            expected_label: str = "benign"
+            expected_label: str = "" 
     ):
         """
         Add a test case to the false negatives collection.
@@ -203,7 +207,7 @@ class EfficacyTracker:
             )
         self.fn_count += 1
         self.per_detector_fn[detector_not_seen] += 1
-        self.label_stats[expected_label]["FN"] += 1
+        self.label_stats[detector_not_seen]["FN"] += 1
 
         if self.verbose:
             print(f"{DARK_RED}FN: expected detection: '{detector_not_seen}' for expected_label:'{expected_label}'")
@@ -217,8 +221,8 @@ class EfficacyTracker:
             test: TestCase,
             expected_labels: List[str], 
             detected_detectors_labels: List[str],
-            benign_labels: List[str] = ["benign", "benign_auto", "conforming"], # TODO: get this from a global or config
-            malicious_prompt_labels: List[str] = ["malicious-prompt", "injection", "jailbreak"], # TODO: get this from a global or config
+            benign_labels: List[str] = defaults.benign_labels,
+            malicious_prompt_labels: List[str] = defaults.malicious_prompt_labels,
             ):
         """
         Update efficacy statistics by comparing expected and actual detector results.
@@ -246,29 +250,22 @@ class EfficacyTracker:
                     FP(detected)
 
         How do benign_labels come in?  
-            If any of the benign_labels are in expected_labels, then 
-                If “malicious-prompt” in detected_detectors_labels
-                    FP(“malicious-prompt”)
-
-
-        Benign and malicious labels only apply to the results of malicious prompt detection.
-        We can't have a both a benign and a malicious prompt label in the same test.
-        If we do, then we should just use the malicious prompt label and report an warning/error.
-        TODO:
-        Do we want to allow benign labels to be used for topic detection to indicate the same as 
-        "no topic detected"?
-
-        TODO:
-        We need to ensure that nothing passed for use as a benign_label or a malicious_prompt_label
-        matches one of our other detector or topic labels (e.g. toxicity, self-harm-and-violence, etc.)
-        This should be done when we receive the command line arguments, so we can validate.
+            They should have been removed if seen - benign means no detection expected.
 
         """
+        # Allow single-string inputs by wrapping into a list
+        if isinstance(expected_labels, str):
+            expected_labels = [expected_labels]
+
+        if isinstance(detected_detectors_labels, str):
+            detected_detectors_labels = [detected_detectors_labels]
 
         # Normalize inputs to lists of strings
         expected_labels = expected_labels or []
+
         detected_detectors_labels = detected_detectors_labels or []
         expected_labels = [str(label) for label in expected_labels]
+
         detected_detectors_labels = [
             str(det) for det in detected_detectors_labels
         ]
@@ -288,23 +285,19 @@ class EfficacyTracker:
         found_fn = set()
         found_tp = set()
         found_tn = set()
-
-        def apply_synonyms(labels: List[str], synonyms: List[str], replacement: str) -> List[str]:
-            """
-            Replace any label in labels that matches a synonym in synonyms with the specified replacement.
-            Remove duplicates from the resulting list.
-            """
-            return list(set([replacement if label in synonyms else label for label in labels]))
         
+        # TODO: Move this to happen as test cases are loaded, so we don't have to do it every time.
         # Apply synonyms to expected_labels for "malicious-prompt"
         expected_labels = apply_synonyms(expected_labels, malicious_prompt_labels, "malicious-prompt")
 
         # Apply synonyms to expected_labels for "benign"
         expected_labels = apply_synonyms(expected_labels, benign_labels, "benign")
+        if "benign" in expected_labels:
+            expected_labels.remove("benign")  # Remove "benign" from expected_labels
 
         # Update label_counts
-        if test and test.labels:
-            for label in test.labels:
+        if test and test.label:
+            for label in test.label:
                 self.label_counts[label] += 1
 
         if self.debug:
@@ -313,6 +306,8 @@ class EfficacyTracker:
 
 
         # If any benign label is in expected_labels, we expect no malicious prompt detections
+        # TODO: THIS SHOULD NOT BE NEEDED - THERE SHOULD BE NO "benign" LABELS - "benign" means no detections expected.
+
         for benign_label in benign_labels:
             if benign_label in expected_labels:
                 # If a benign label is found, we expect no malicious prompt detections
@@ -348,6 +343,7 @@ class EfficacyTracker:
                 tp_detected = True
                 found_tp.add(expected)
 
+                print(f"{DARK_GREEN}TP: Expected label '{expected}' detected in {detected_detectors_labels}{RESET}")
                 self.add_true_positive(
                     test,
                     expected_label=expected,
@@ -377,7 +373,7 @@ class EfficacyTracker:
 
                 self.add_false_positive(
                     test,
-                    expected_label="benign",
+                    expected_label="",
                     detector_seen=detected
                 )
         # No need to check for FN here, as we already checked expected_labels
@@ -386,38 +382,22 @@ class EfficacyTracker:
         # Update case-level counts: record both false positives and false
         # negatives if present
         if found_fp:
-            self.fp_count += 1 # TODO: This should be a test_case_fp_count, 
-                               #  not a global fp_count.  BUT, won't self.false_positives be that?
-                               # 
             fp_detected = True
             fp_names.extend(found_fp)
         if found_fn:
-            self.fn_count += 1 # TODO: This should be a test_case_fn_count, not a global fn_count
             fn_detected = True
             fn_names.extend(found_fn)
         # If no false positives or false negatives, record a TP or TN
         if not found_fp and not found_fn:
-            if found_tp:
-               tp_detected = True
-               # TODO: What does this case mean?
-               # How do we know what the found tp was?
-               detected = found_tp.pop()  # Get one of the found TPs
-               found_tp.add(detected) # Assuming benign is the default for TP
-               self.add_true_positive(
-                    test,
-                    expected_label=detected,
-                    detector_seen=detected
-                )
-            else:
+            if not tp_detected:
                 # true negative: nothing expected and nothing detected
                 tn_detected = True
-                found_tn.add("benign")  # Assuming benign is the default for TN
+                found_tn.add("")  # Assuming benign is the default for TN
                 self.add_true_negative(
                     test,
-                    expected_label="benign",
-                    detector_not_seen="benign"
+                    expected_label="",
+                    detector_not_seen=""
                 )
-                self.tn_count += 1
         return (fp_detected, fn_detected, fp_names, fn_names)
 
     class MetricsDict(TypedDict, total=False):
@@ -559,8 +539,17 @@ class EfficacyTracker:
 
     def print_stats(self, enabled_detectors: List[str] = None):
         """ Print a summary of the efficacy statistics.
+            Print default reports, and any requested by the user.
+            summary_report_file is the file to write the summary report to.
+            fps_out_csv is the file to write false positives to.
+            fns_out_csv is the file to write false negatives to.
+            TODO: Add fps_out and fns_out that derive the output file type from the file extension.
         """
         def _print_all_stats(writeln):
+            if "benign" in enabled_detectors:
+                enabled_detectors.remove("benign")
+            if "" in enabled_detectors:
+                enabled_detectors.remove("")
             metrics = self.calculate_metrics()
             writeln(f"\n--{GREEN}AIGuard Summary{RESET}--")
             if self.args and self.args.report_title:
@@ -582,10 +571,10 @@ class EfficacyTracker:
                     writeln(f"{DARK_YELLOW}No non-zero results for this detector.{RESET}")
                     continue
 
-                writeln(f"{DARK_RED}False Positives: {det_metrics['fp_count']}{RESET}")
-                writeln(f"{DARK_RED}False Negatives: {det_metrics['fn_count']}{RESET}")
                 writeln(f"{DARK_GREEN}True Positives: {det_metrics['tp_count']}{RESET}")
                 writeln(f"{DARK_GREEN}True Negatives: {det_metrics['tn_count']}{RESET}")
+                writeln(f"{DARK_RED}False Positives: {det_metrics['fp_count']}{RESET}")
+                writeln(f"{DARK_RED}False Negatives: {det_metrics['fn_count']}{RESET}")
                 writeln(f"\nAccuracy: {DARK_GREEN}{det_metrics['accuracy']:.4f}{RESET}")
                 writeln(f"Precision: {DARK_GREEN}{det_metrics['precision']:.4f}{RESET}")
                 writeln(f"Recall: {DARK_GREEN}{det_metrics['recall']:.4f}{RESET}")
@@ -632,6 +621,7 @@ class EfficacyTracker:
                         writeln(f"{DARK_RED}Test Case: {fn_case.test.index}, Expected Label: {fn_case.expected_label}, Not Detected: {fn_case.detector_not_seen}")
                         writeln(f"\tMessages: {formatted_json_str(fn_case.test.messages[:3])}")
 
+        """ print_stats() body here"""
         if self.args and self.args.summary_report_file:
             with open(self.args.summary_report_file, "w") as f:
                 def writeln(line: str = ""):
@@ -642,6 +632,112 @@ class EfficacyTracker:
             def writeln(line: str = ""):
                 print(line)
             _print_all_stats(writeln)
+        # print fps_out_csv and fns_out_csv if specified
+        if self.args and self.args.fps_out_csv:
+            fps_out_csv = self.args.fps_out_csv
+            EfficacyTracker.print_cases_csv(
+                fps_out_csv,
+                positive=True,  # True for false positives
+                cases=self.false_positives
+            )
+        if self.args and self.args.fns_out_csv:
+            fns_out_csv = self.args.fns_out_csv
+            EfficacyTracker.print_cases_csv(
+                fns_out_csv,
+                positive=False,  # False for false negatives
+                cases=self.false_negatives
+            )
+    @staticmethod
+    def print_cases_csv(out_csv: str, positive: bool, cases: list["EfficacyTracker.FailedTestCase"]):
+        """
+        Print test cases (false positives, false negatives, etc.) to a CSV file.
+
+        Args:
+            out_csv (str): Output CSV file path.
+            activity (str): Activity string for logging (e.g., "Writing false positives").
+            cases (list): List of EfficacyTracker.FailedTestCase objects.
+        """
+        if not out_csv.endswith(".csv"):
+            out_csv += ".csv"
+        # if positive:
+        #     print(f"{DARK_GREEN}Writing FPs to {out_csv}{RESET}")
+        # else:
+        #     print(f"{DARK_GREEN}Writing FNs to {out_csv}{RESET}")
+        try:
+            with open(out_csv, mode="w", newline="", encoding="utf-8") as csvfile:
+                csvwriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
+                csvwriter.writerow(
+                    [
+                        "Test Messages",
+                        "Test Case Index",
+                        "Expected Label",
+                        "Test Case Labels",
+                        "FP Detector" if positive else "FN Detector",
+                    ]
+                )
+                for case in cases:
+                    messages = (
+                        case.test.messages
+                        if case.test.messages
+                        else [{"role": "user", "content": "No User Message"}]
+                    )
+                    # Join all user messages for context
+                    test_case_messages = " | ".join(
+                        msg["content"] for msg in messages if msg.get("role") == "user"
+                    ) or "No Messages"
+                    test_case_index = (
+                        case.test.index if getattr(case.test, "index", None) is not None else "N/A"
+                    )
+                    expected_labels = (
+                        ",".join(case.expected_label)
+                        if isinstance(case.expected_label, list)
+                        else case.expected_label
+                    )
+                    test_case_labels = (
+                        ",".join(case.test.label)
+                        if isinstance(case.test.label, list)
+                        else case.test.label
+                    )
+
+                    # Use detector_seen if present, else detector_not_seen
+                    if positive:
+                        detector_field = getattr(case, "detector_seen", None)
+                    else:
+                        detector_field = getattr(case, "detector_not_seen", None)
+                    detected_detectors = (
+                        ",".join(detector_field)
+                        if isinstance(detector_field, list)
+                        else detector_field
+                    )
+                    csvwriter.writerow(
+                        [
+                            test_case_messages,
+                            test_case_index,
+                            expected_labels,
+                            test_case_labels,
+                            detected_detectors,
+                        ]
+                    )
+            if positive:
+                print(f"{DARK_GREEN}FPs written to {out_csv}{RESET}")
+            else:
+                print(f"{DARK_GREEN}FNs written to {out_csv}{RESET}")
+        except Exception as e:
+            print(f"{DARK_RED}Error writing {activity.lower()} to CSV: {e}{RESET}")
+            return None
+        return out_csv
+
+    def print_fns_csv(self, fns_out_csv: str):
+        """ Print false negatives to a CSV file.
+        """
+        if not fns_out_csv.endswith(".csv"):
+            fns_out_csv += ".csv"
+        print(f"Writing false negatives to {fns_out_csv}")
+        with open(fns_out_csv, "w") as f:
+            f.write("Test Case Index,Expected Label,Not Detected Detector\n")
+            for fn_case in self.false_negatives:
+                f.write(f"{fn_case.test.index},{fn_case.expected_label},{fn_case.detector_not_seen}\n")
+        print(f"{DARK_GREEN}False negatives written to {fns_out_csv}{RESET}")
 
     def _print_label_stats(self, writeln):
         """ Print label-wise false positives and false negatives.
@@ -795,6 +891,7 @@ class AIGuardManager:
 
 
     def add_error_response(self, response):
+        """ TODO: Allow error responses to be added to an output file and flushed to disk as they come in"""
         self.errors[response.status_code] += 1
         self.error_responses.append(response)
 
@@ -1062,15 +1159,15 @@ class AIGuardManager:
         if self.debug:
             # TODO: remove this debug print once we have full support for all detectors
             print(f"{DARK_YELLOW}Updating test labels with: {label}{RESET}")
-            print(f"\tCurrent test labels: {test.labels}")
+            print(f"\tCurrent test labels: {test.label}")
 
         if label == "self-harm-and-violence":
             # TODO: TEMP FIX UNTIL API IS UPDATED:
             # Replace self-harm-and-violence with self harm and violence
             label = label.replace("-", " ")
 
-        if label not in test.labels:
-            test.labels.append(label)
+        if label not in test.label:
+            test.label.append(label)
             if self.debug:
                 print(f"\t{DARK_GREEN}Added label: {label}{RESET}")
 
@@ -1086,7 +1183,7 @@ class AIGuardManager:
                 return
 
             # If there isn't already a labels element, make sure there is one.
-            test.labels = test.labels or []
+            test.label = test.label or []
             updated_labels = False
 
             if test.expected_detectors.prompt_injection and test.expected_detectors.prompt_injection.detected:
@@ -1104,7 +1201,7 @@ class AIGuardManager:
                 #TODO : Add support for other expected detectors
 
             if self.debug and updated_labels:
-                print(f"{DARK_YELLOW}Updated test labels from expected_detectors. {test.labels}{RESET}")
+                print(f"{DARK_YELLOW}Updated test labels from expected_detectors. {test.label}{RESET}")
         except AttributeError as e:
             print(
                 f"{DARK_RED}AttributeError updating test labels from "
@@ -1217,7 +1314,7 @@ class AIGuardManager:
         # test.labels, but also whatever was in test.expected_detectors (union).
         self.update_test_labels_from_expected_detectors(test)
 
-        expected_detectors_labels = test.labels 
+        expected_detectors_labels = test.label 
         actual_detectors_labels = self.labels_from_actual_detectors(raw_detectors)
 
         fp_detected, fn_detected, fp_names, fn_names = (
@@ -1255,20 +1352,19 @@ class AIGuardManager:
                 except Exception as e:
                     print(f"Error in print_errors: {e}")
                     print(f"Error response: {error}")
-        # TODO: Match prompt_lab.py's print_errors format
-        # TODO: Also make this happen as errors are added to the collection
+        # TODO: Make this happen as errors are added to the collection
         #       and flush to disk so callers can monitor errors in real-time.
-        # if self.summary_report_file:
-        #     error_report_file = self.summary_report_file + ".errors.txt"
-        #     with open(error_report_file, "w") as f:
-        #         f.write("\nErrors:\n")
-        #         for error in self.error_responses:
-        #             try:
-        #                 formatted_json_error = json.dumps(error.json(), indent=4)
-        #                 f.write(f"{formatted_json_error}\n")
-        #             except Exception as e:
-        #                 f.write(f"Error in print_errors: {e}\n")
-        #                 f.write(f"Error response: {error}\n")        
+        if self.summary_report_file:
+            error_report_file = self.summary_report_file + ".errors.txt"
+            with open(error_report_file, "w") as f:
+                f.write("\nErrors:\n")
+                for error in self.error_responses:
+                    try:
+                        formatted_json_error = json.dumps(error.json(), indent=4)
+                        f.write(f"{formatted_json_error}\n")
+                    except Exception as e:
+                        f.write(f"Error in print_errors: {e}\n")
+                        f.write(f"Error response: {error}\n")
 
     def print_summary(self):
         if not self.efficacy.total_calls:
@@ -1417,8 +1513,14 @@ class AIGuardTests:
     settings: Settings
     tests: List[TestCase]
 
-    def __init__(self, settings, args, tests: Optional[List[TestCase]] = None):
+    def __init__(
+            self, 
+            settings: Settings, 
+            aig: AIGuardManager,
+            args, 
+            tests: Optional[List[TestCase]] = None):
         self.settings = settings if settings else Settings()
+        self.aig = aig
         self.tests = tests if tests else []
         self.args = args
 
@@ -1441,19 +1543,36 @@ class AIGuardTests:
                         except Exception:
                             print(f"Skipping invalid JSON line {i}: {line}")
                             continue
+
                         messages = line_data.get("messages", [])
                         labels = line_data.get("label", [])
+                        expected_detectors = line_data.get("expected_detectors", None)
+                        if not isinstance(labels, list):
+                            print(f"Warning: Invalid labels format in line {i}. Expected a list, got {type(labels)}. Skipping test case: {line_data}")
+                            continue
+                        if not isinstance(messages, list) or not all(isinstance(msg, dict) for msg in messages):
+                            print(f"Warning: Invalid messages format in line {i}. Skipping test case: {line_data}")
+                            continue
+                        # Ensure messages is a list of dictionaries
+                        if not messages:
+                            print(f"Warning: Empty messages in line {i}. Skipping test case: {line_data}")
+                            continue
                         # Append as raw dict for unified processing
                         data_tests.append({
-                            "messages": messages,
+                            "index": i,
                             "label": labels,
-                            "settings": self.settings
+                            "messages": messages,
+                            "settings": line_data.get("settings") or self.settings or None,
+                            "expected_detectors": expected_detectors or None,                            
                         })
             except FileNotFoundError:
                 print(f"Error: File '{filename}' not found.")
                 return
             except json.JSONDecodeError as e:
                 print(f"Error: Failed to parse JSON file '{filename}'. {e}")
+                return
+            except Exception as e:
+                print(f"Error: Unexpected error while reading file '{filename}': {e}")
                 return
         else:
             try:
@@ -1466,31 +1585,10 @@ class AIGuardTests:
                 print(f"Error: Failed to parse JSON file '{filename}'. {e}")
                 return
 
-            # Helper function to initialize settings
-            def initialize_settings(settings_data):
-                if settings_data is None:
-                    return None
-                settings = Settings(**settings_data)
-                if settings.overrides and not isinstance(settings.overrides, Overrides):
-                    settings.overrides = Overrides(**settings.overrides)
-                if settings.log_fields and not isinstance(settings.log_fields, LogFields):
-                    settings.log_fields = LogFields(**settings.log_fields)
-                return settings
-
-            def initialize_expected_detectors(expected_data):
-                if expected_data is None:
-                    return None
-                expected_detectors = dict(**expected_data)
-                if isinstance(expected_detectors, dict):
-                    return expected_detectors
-                else:
-                    print(f"Warning: Invalid expected_detectors format: {expected_data}")
-                    return None
-
             # Load test cases - if using json format with a "tests" key, use that; otherwise, use the root data
             if isinstance(data, dict):
-                # Load global settings
-                self.settings = initialize_settings(data.get("settings")) or Settings()
+                # Load global settings via from_dict
+                self.settings = Settings.from_dict(data.get("settings")) if data.get("settings") else Settings()
                 data_tests = data.get("tests", [])
             elif isinstance(data, list):
                 self.settings = Settings()
@@ -1503,47 +1601,84 @@ class AIGuardTests:
             if self.args.recipe:
                 self.settings.recipe = self.args.recipe
 
-        # Helper functions for the unified loop (in case .jsonl branch didn't define them)
-        def initialize_settings(settings_data):
-            if settings_data is None:
-                return None
-            settings = Settings(**settings_data) if not isinstance(settings_data, Settings) else settings_data
-            if hasattr(settings, "overrides") and settings.overrides and not isinstance(settings.overrides, Overrides):
-                settings.overrides = Overrides(**settings.overrides)
-            if hasattr(settings, "log_fields") and settings.log_fields and not isinstance(settings.log_fields, LogFields):
-                settings.log_fields = LogFields(**settings.log_fields)
-            return settings
-        def initialize_expected_detectors(expected_data):
-            if expected_data is None:
-                return None
-            expected_detectors = dict(**expected_data) if not isinstance(expected_data, dict) else expected_data
-            if isinstance(expected_detectors, dict):
-                return expected_detectors
-            else:
-                print(f"Warning: Invalid expected_detectors format: {expected_data}")
-                return None
-        def initialize_labels(labels):
-            if labels is None:
-                return None
-            labels = list(**labels) if not isinstance(labels, list) else labels
-            if isinstance(labels, list):
-                return labels
-            else:
-                print(f"Warning: Invalid labels format: {labels}")
-                return None            
-
-
-        for test_data in data_tests:
+        for idx, test_data in enumerate(data_tests, start=1):
             # print(f"Loading test case: {test_data}")
             messages = test_data.get("messages")
             if not isinstance(messages, list) or not all(isinstance(msg, dict) for msg in messages):
                 print(f"Warning: Invalid messages format in test case. Skipping test case: {test_data}")
                 continue
 
-            settings = initialize_settings(test_data.get("settings")) or self.settings
-            expected = initialize_expected_detectors(test_data.get("expected_detectors"))
-            labels = initialize_labels(test_data.get("label"))
-            testcase = TestCase(messages=messages, settings=settings, expected_detectors=expected, labels=labels)
+            # Hydrate TestCase from raw dict (leveraging from_dict on each class)
+            raw_tc = {
+                "index": idx,
+                "label": test_data.get("label") or [],
+                "messages": messages,
+                "settings": test_data.get("settings") or self.settings,
+                "expected_detectors": test_data.get("expected_detectors") or None,
+            }
+            try:
+                testcase = TestCase.from_dict(raw_tc)
+            except Exception as e:
+                print(f"{DARK_RED}Skipping invalid test case ({e}): {test_data}{RESET}")
+                continue
+
+            # Ensure we have a labels list
+            testcase.label = testcase.label or []
+
+            # The test case can have labels and expected_detectors.
+            # Need to set labels to the union of those.
+            expected_detectors_labels = []
+            if testcase.expected_detectors:
+                expected_detectors_labels = testcase.expected_detectors.get_expected_detector_labels()
+            testcase.label.extend(expected_detectors_labels)
+
+            # Then need to apply synonyms to the labels based on benign_labels and malicious_prompt_labels
+            # from the command line arguments. TODO: Pass those in to the constructor - don't
+            # get them straight from settings.args.
+
+            # Need to make labels be restricted to the detectors enabled in the overrides 
+            # and the labels it started with, and the lables in the expected_detectors.
+            
+            # Apply synonyms to expected_labels for "malicious-prompt"
+            malicious_prompt_labels: List[str] = [l.strip().lower() for l in self.args.malicious_prompt_labels.split(",")] if self.args.malicious_prompt_labels else []
+            if malicious_prompt_labels:
+                testcase.label = apply_synonyms(testcase.label, malicious_prompt_labels, "malicious-prompt")
+
+            # Apply synonyms to expected_labels for "benign", and then remove any
+            # "benign" label because "benign" means "label not present", so nothing
+            # expected.
+            benign_labels: List[str] = [l.strip().lower() for l in self.args.benign_labels.split(",")] if self.args.benign_labels else []
+            if benign_labels:
+                testcase.label = apply_synonyms(testcase.label, benign_labels, "benign")
+                if "benign" in testcase.label:
+                    testcase.label.remove("benign")  # Remove "benign" if it was added by synonyms
+            # Now we have labels that are the union of expected_detectors_labels and the labels
+            # from the test case, with synonyms applied.
+
+            
+            # Then we need to filter the labels to only those that are in the enabled detectors from the
+            # test case + the command line --detectors arg: 
+            # effective_enabled_detectors = test_case_enabled_detectors + command_line_enabled_detectors
+            # Then we can use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
+            # are valid and only those that are for enabled and supported detectors.
+
+            # Test case enabled detectors are settings.overrides if they exist, otherwise from the 
+            # settings.overrides inherited from the global settings if they exist.
+            test_case_enabled_detectors = []
+            if testcase.settings and getattr(testcase.settings, "overrides", None):
+                test_case_enabled_detectors = testcase.settings.overrides.get_enabled_detector_labels() or []
+            elif self.settings and getattr(self.settings, "overrides", None):
+                test_case_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
+
+            # Now want to add any enabled detectors from the command line args.            
+            cmd_line_enabled_detectors = self.aig.enabled_detectors
+
+            effective_enabled_detectors = set(test_case_enabled_detectors + cmd_line_enabled_detectors)
+
+            testcase.index = len(self.tests) + 1  # Set index based on current length of tests
+            # Use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
+            # are valid and only those that are for enabled and supported detectors.
+            testcase.ensure_valid_labels(effective_enabled_detectors)
 
             # Ensure system message and recipe
             # If system_prompt or recipe is specified on the command line, it should take precedence
@@ -1579,6 +1714,8 @@ class AIGuardTests:
                     progress = (index + 1) / total_rows * 100
                     print("\r\033[2K", end="")
                     print(f"{progress:.2f}%", end="\r", flush=True)
+                    # TODO: Note that AIGuardManager that loads json and jsonl files already sets the index,
+                    # but not sure if other methods will do so.
                     test.index = index
                     response = aig.ai_guard_test(test)
                     # TODO: Check promptlab behavior:
