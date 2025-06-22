@@ -1,5 +1,10 @@
 # Copyright 2021 Pangea Cyber Corporation
 # Author: Pangea Cyber Corporation
+
+malicious_prompt_str = "malicious-prompt"
+benign_str = "benign"
+
+
 valid_topics = [
             "toxicity",
             "self-harm-and-violence",
@@ -17,10 +22,26 @@ valid_topics = [
         ]
 valid_topics_str = ", ".join(valid_topics)
 
+## TODO: Need to be consistent with how the code handles detector names and topic names.
+# Want to allow --detectors to include both detector names and topic names, and to allow
+# topic names with or without the "topic:" prefix. 
+# The code should allow both formats, but intenally always normalize to the "topic:<topic-name>" format.
+# The valid_topics needs to be without the "topic:" prefix for use in the Overrides for the Topic detector.
 valid_detectors = [
         "malicious-prompt",
-        # TODO: Add all of the detectors that are available in the API
-        # Just a lot of work (esp. for language) but why not?
+        "topic",
+        "code-detection",
+        "competitors",
+        "language-detection",
+        "malicious-entity",
+        "pii-entity",
+        "secrets-detection",
+        # TODO: NOTE: Only malicious-prompt and topic are fully supported right now.
+        # NOTE: Using the overrides parameter names with undercore converted to hyphen for detector names.
+        # NOTE: EXCEPT that we use "malicious-prompt" instead of "prompt-injection" for the malicious prompt detector.
+        # NOTE: The AI Guard API Overrides are out of date - many were changed to topics API is not yet updated.
+        # NOTE: As the overrides parameter names change, need to update the detector names here.
+        # NOTE: And the TestCase class and associated other clasees. 
         ]
 # Add topic detectors prefixed with "topic:" to the valid detectors
 # We also accept just the topic name without "topic:" prefix
@@ -90,6 +111,10 @@ default_recipes_str = ", ".join(default_recipes)
 # Default is no recipe because you override detectors and topics
 # with --detectors and/or overrides in the test case objects.
 default_recipe = "pangea_prompt_guard"
+default_system_prompt = (
+    "You are a helpful assistant."
+    "Your task is to assist the user with their queries while ensuring that the content is safe and appropriate."
+)
 
 default_rps = 15
 max_poll_attempts = 12

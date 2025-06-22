@@ -7,6 +7,8 @@ import time
 import requests
 import json
 import csv
+from datetime import datetime
+from tzlocal import get_localzone
 
 
 from collections import Counter, defaultdict
@@ -35,11 +37,19 @@ from utils.utils import (
     remove_outer_quotes,
     rate_limited,
 )
-from utils.colors import RED, DARK_RED, MAGENTA, YELLOW, DARK_YELLOW, GREEN, DARK_GREEN, RESET
+from utils.colors import (
+    RED,
+    DARK_RED,
+    DARK_YELLOW,
+    GREEN,
+    DARK_GREEN,
+    BRIGHT_GREEN,
+    RESET,
+)
 from defaults import defaults
 
 
-
+# TODO: Move this to a separate module.
 class EfficacyTracker:
     class FailedTestCase:
         def __init__(self, 
@@ -75,7 +85,6 @@ class EfficacyTracker:
         self.per_detector_tn = Counter()
 
         # Initialize label counts and stats
-        # TODO: These are not yet set - should we set them in update()?
         self.label_counts: Counter = Counter()
         self.label_stats: defaultdict = defaultdict(lambda: {"FP": 0, "FN": 0})
 
@@ -94,6 +103,12 @@ class EfficacyTracker:
         self.true_positives: list[EfficacyTracker.FailedTestCase] = []
         self.false_negatives: list[EfficacyTracker.FailedTestCase] = []
         self.true_negatives: list[EfficacyTracker.FailedTestCase] = []
+
+        # Initialize error tracking
+        # TODO: Modify AIGuardManager to track these here.
+        self.error_responses: list[Response] = []
+        self.errors: Counter = Counter()
+        self.blocked = 0
 
     def add_false_positive(
         self,
@@ -119,7 +134,8 @@ class EfficacyTracker:
         self.label_stats[detector_seen]["FP"] += 1
 
         if self.verbose:
-            print(f"{DARK_RED}FP: expected_label '{expected_label}' but detected '{detector_seen}'")
+            index = test.index if hasattr(test, 'index') else "unknown"
+            print(f"{DARK_RED}Test:{index}:FP: expected_label '{expected_label}' but detected '{detector_seen}'")
             print(
                 f"\t{DARK_YELLOW}Messages:\n"
                 f"{DARK_RED}{formatted_json_str(test.messages[:3])}{RESET}"
@@ -210,7 +226,8 @@ class EfficacyTracker:
         self.label_stats[detector_not_seen]["FN"] += 1
 
         if self.verbose:
-            print(f"{DARK_RED}FN: expected detection: '{detector_not_seen}' for expected_label:'{expected_label}'")
+            index = test.index if hasattr(test, 'index') else "unknown"
+            print(f"{DARK_RED}Test:{index}:FN: expected detection: '{detector_not_seen}' for expected_label:'{expected_label}'")
             print(
                 f"\t{DARK_YELLOW}Messages:\n"
                 f"{DARK_RED}{formatted_json_str(test.messages[:3])}{RESET}"
@@ -286,7 +303,6 @@ class EfficacyTracker:
         found_tp = set()
         found_tn = set()
         
-        # TODO: Move this to happen as test cases are loaded, so we don't have to do it every time.
         # Apply synonyms to expected_labels for "malicious-prompt"
         expected_labels = apply_synonyms(expected_labels, malicious_prompt_labels, "malicious-prompt")
 
@@ -343,7 +359,6 @@ class EfficacyTracker:
                 tp_detected = True
                 found_tp.add(expected)
 
-                print(f"{DARK_GREEN}TP: Expected label '{expected}' detected in {detected_detectors_labels}{RESET}")
                 self.add_true_positive(
                     test,
                     expected_label=expected,
@@ -463,10 +478,9 @@ class EfficacyTracker:
         accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) else 0
         specificity = tn / (tn + fp) if (tn + fp) else 0
         # TODO: Ensure that the overall_metrics are only calculated against per-test case metrics,
-        # not the overall counts.  NOT SURE HOW TO DO THIS YET OR HOW TO DEFINE IT.
+        # not the overall counts. 
         # Each test case can have multiple labels and there can be tps, tns, fps, fns for each label.
         # So we need to calculate the metrics for each label, detector, and topic separately.
-        # So what do overall metrics mean?  Does it make sense to have overall metrics? TBD
         overall_metrics: EfficacyTracker.MetricsDict = {
             "accuracy": accuracy,
             "precision": precision,
@@ -537,6 +551,33 @@ class EfficacyTracker:
 
         return all_metrics
 
+    def print_errors(self):
+        if len(self.errors) == 0:
+            return
+        if self.verbose:
+            print(f"\n--- {DARK_RED}Errors encountered during AI Guard calls:{RESET} --")
+            for error in self.error_responses:
+                try:
+                    formatted_json_error = json.dumps(error.json(), indent=4)
+                    print(f"{formatted_json_error}")
+                except Exception as e:
+                    print(f"Error in print_errors: {e}")
+                    print(f"Error response: {error}")
+        # TODO: Make this happen as errors are added to the collection
+        #       and flush to disk so callers can monitor errors in real-time.
+        if self.args.summary_report_file:
+            error_report_file = self.args.summary_report_file + ".errors.txt"
+            with open(error_report_file, "w") as f:
+                f.write("\nErrors:\n")
+                for error in self.error_responses:
+                    try:
+                        formatted_json_error = json.dumps(error.json(), indent=4)
+                        f.write(f"{formatted_json_error}\n")
+                    except Exception as e:
+                        f.write(f"Error in print_errors: {e}\n")
+                        f.write(f"Error response: {error}\n")
+
+
     def print_stats(self, enabled_detectors: List[str] = None):
         """ Print a summary of the efficacy statistics.
             Print default reports, and any requested by the user.
@@ -544,6 +585,7 @@ class EfficacyTracker:
             fps_out_csv is the file to write false positives to.
             fns_out_csv is the file to write false negatives to.
             TODO: Add fps_out and fns_out that derive the output file type from the file extension.
+            TODO: Add create_summary_csv() support as is done in prompt-lab.
         """
         def _print_all_stats(writeln):
             if "benign" in enabled_detectors:
@@ -551,9 +593,22 @@ class EfficacyTracker:
             if "" in enabled_detectors:
                 enabled_detectors.remove("")
             metrics = self.calculate_metrics()
-            writeln(f"\n--{GREEN}AIGuard Summary{RESET}--")
+            writeln(f"\n{BRIGHT_GREEN}AIGuard Efficacy Report{RESET}")
             if self.args and self.args.report_title:
-                writeln(f"\n{DARK_GREEN}Report Title: {self.args.report_title}{RESET}")
+                writeln(f"{self.args.report_title}")
+            
+            local_tz = get_localzone()
+            local_time = datetime.now(local_tz)
+            formatted_time = local_time.strftime("%Y-%m-%d %H:%M:%S %Z (UTC%z)")
+            writeln(f"Report generated at: {formatted_time}")
+            writeln(f"CMD: {' '.join(sys.argv)}")
+            if self.args and self.args.input_file:
+                writeln(f"Input dataset: {self.args.input_file}")
+            writeln(f"Service: {defaults.ai_guard_service}")
+            writeln(f"Total Calls: {self.total_calls}")
+            writeln(f"Requests per second: {self.args.rps}")
+            writeln(f"\n{RED}Errors: {self.errors}{RESET}")
+
             for detector, det_metrics in metrics.items():
                 # Filter unused detectors
                 if detector not in enabled_detectors and detector != "overall":
@@ -597,7 +652,7 @@ class EfficacyTracker:
                         writeln(f"{DARK_RED}Saved Test Cases with FNs: {det_metrics['fn_saved_test_count']}{RESET}")
                         writeln(f"{DARK_GREEN}Saved Test Cases with TPs: {det_metrics['tp_saved_test_count']}{RESET}")
                         writeln(f"{DARK_GREEN}Saved Test Cases with TNs: {det_metrics['tn_saved_test_count']}{RESET}")
-                    ## TODO: Don't out put these if they are empty
+                    ## TODO: Don't output these if they are empty
                     writeln(f"{DARK_RED}Summary of Per-detector FPs: {det_metrics['fp_detector_summary']}{RESET}")
                     writeln(f"{DARK_RED}Summary of Per-detector FNs: {det_metrics['fn_detector_summary']}{RESET}")
                     writeln(f"\n{DARK_GREEN}Summary of Per-detector TPs: {det_metrics['tp_detector_summary']}{RESET}")
@@ -818,6 +873,7 @@ class AIGuardManager:
         self.valid_detectors = defaults.valid_detectors
         self.valid_topics = defaults.valid_topics
 
+        ## Whenever there is an enabled_topic, we must put "topic" into the detectors list.
         self.enabled_detectors: list[str] = []
         self.enabled_topics: list[str] = []
         enabled_detectors_str = args.detectors
@@ -836,14 +892,27 @@ class AIGuardManager:
                 else:
                     if detector.startswith("topic:"):
                         topic_name = detector.split(":", 1)[1]
-                        if topic_name not in self.valid_topics:
+                        if isinstance(topic_name, str) and topic_name not in self.enabled_topics:
                             self.enabled_topics.append(topic_name)
-                    elif detector in self.valid_topics:
-                        if detector not in self.enabled_topics:
-                            self.enabled_topics.append(detector)
-                    else:
-                        if detector not in self.enabled_detectors:
+                        if isinstance(detector, str) and detector not in self.enabled_detectors:
+                            print(f"{DARK_YELLOW}1.Added topic detector '{detector}' for topic '{topic_name}'.{RESET}")
                             self.enabled_detectors.append(detector)
+                    elif detector in self.valid_topics:
+                        topic_name = detector
+                        detector = f"topic:{topic_name}"
+                        if isinstance(topic_name, str) and topic_name not in self.enabled_topics:
+                            self.enabled_topics.append(topic_name)
+                        if isinstance(detector, str) and detector not in self.enabled_detectors:
+                            print(f"{DARK_YELLOW}2.Added topic detector '{detector}' for topic '{topic_name}'.{RESET}")
+                            self.enabled_detectors.append(detector)
+                    else:
+                        if isinstance(detector, str) and detector not in self.enabled_detectors:
+                            self.enabled_detectors.append(detector)
+        # If any topics are enabled, we must ensure "topic" is in the detectors list
+        if self.enabled_topics and "topic" not in self.enabled_detectors:
+            self.enabled_detectors.append("topic")
+            if self.verbose:
+                print(f"{DARK_YELLOW}Added 'topic' detector because topics are enabled.{RESET}")
         # Must have at least one detector enabled
         if not self.enabled_detectors:
             print(f"{DARK_RED}No valid detectors specified. Exiting.{RESET}")
@@ -879,9 +948,6 @@ class AIGuardManager:
             raise ValueError("Benign and malicious prompt labels must not overlap.")            
 
         # TODO: Should these all be moved into EfficacyTracker?
-        self.blocked = 0
-        self.error_responses: list[Response] = []
-        self.errors: Counter = Counter()
         self.detected_detectors: Counter = Counter()
         self.detected_analyzers: Counter = Counter()
         self.detected_malicious_entities: Counter = Counter()
@@ -892,8 +958,8 @@ class AIGuardManager:
 
     def add_error_response(self, response):
         """ TODO: Allow error responses to be added to an output file and flushed to disk as they come in"""
-        self.errors[response.status_code] += 1
-        self.error_responses.append(response)
+        self.efficacty.errors[response.status_code] += 1
+        self.efficacy.error_responses.append(response)
 
     def add_duration(self, duration):
         self.efficacy.duration_sum += duration
@@ -905,7 +971,7 @@ class AIGuardManager:
         return self.efficacy.total_calls
 
     def get_blocked(self):
-        return self.blocked
+        return self.efficacy.blocked
 
     def get_detected_detectors(self, api_response):
         """
@@ -1283,7 +1349,7 @@ class AIGuardManager:
         blocked = result.get("blocked", False)
 
         if blocked:
-            self.blocked += 1
+            self.efficacy.blocked += 1
 
         if self.verbose:
             if blocked:
@@ -1328,43 +1394,17 @@ class AIGuardManager:
         )
 
         if fp_detected or fn_detected:            
+            index = test.index if hasattr(test, "index") else "N/A"
             if fp_detected:
-                print(f"\t{DARK_RED}False Positives Detected: {fp_names}{RESET}")
+                print(f"\t{DARK_RED}Test:{index}:False Positives Detected: {fp_names}{RESET}")
             if fn_detected:
-                print(f"\t{DARK_RED}False Negatives Detected: {fn_names}{RESET}")
-            print(f"\t{DARK_YELLOW}Actual Detectors Labels: {actual_detectors_labels}{RESET}")
-            print(f"\t{DARK_YELLOW}Expected Detectors Labels: {expected_detectors_labels}{RESET}")
+                print(f"\t{DARK_RED}Test:{index}:False Negatives Detected: {fn_names}{RESET}")
+            print(f"\t{DARK_YELLOW}Actual: {actual_detectors_labels} Expected:{expected_detectors_labels}{RESET}")
 
             if self.verbose:
                 print(
                     f"\t{DARK_YELLOW}Messages:\n{DARK_RED}{formatted_json_str(messages[:2])}{RESET}"
                 )  # Show only the first 2 messages for brevity
-
-    def print_errors(self):
-        if len(self.errors) == 0:
-            return
-        if self.verbose:
-            print(f"\n--- {DARK_RED}Errors encountered during AI Guard calls:{RESET} --")
-            for error in self.error_responses:
-                try:
-                    formatted_json_error = json.dumps(error.json(), indent=4)
-                    print(f"{formatted_json_error}")
-                except Exception as e:
-                    print(f"Error in print_errors: {e}")
-                    print(f"Error response: {error}")
-        # TODO: Make this happen as errors are added to the collection
-        #       and flush to disk so callers can monitor errors in real-time.
-        if self.summary_report_file:
-            error_report_file = self.summary_report_file + ".errors.txt"
-            with open(error_report_file, "w") as f:
-                f.write("\nErrors:\n")
-                for error in self.error_responses:
-                    try:
-                        formatted_json_error = json.dumps(error.json(), indent=4)
-                        f.write(f"{formatted_json_error}\n")
-                    except Exception as e:
-                        f.write(f"Error in print_errors: {e}\n")
-                        f.write(f"Error response: {error}\n")
 
     def print_summary(self):
         if not self.efficacy.total_calls:
@@ -1417,7 +1457,7 @@ class AIGuardManager:
         if self.detected_code_languages:
             print(f"\n{DARK_YELLOW}Detected Code Languages: {dict(self.detected_code_languages)}{RESET}")
 
-        self.print_errors()
+        self.efficacy.print_errors()
 
     def _ai_guard_data(
         self,
@@ -1481,7 +1521,9 @@ class AIGuardManager:
 
             data["overrides"] = overrides
         elif test is not None and test.settings:
+            print(f"{DARK_GREEN}ai_guard_test(): NO enabled detectors.  Checking for settings.overrides {RESET}")
             if test.settings.overrides and isinstance(test.settings.overrides, Overrides):
+                print(f"{DARK_GREEN}ai_guard_test(): Using settings.overrides {RESET}")
                 data["overrides"] = self._convert_to_dict(test.settings.overrides)
                 if self.debug:
                     print(f"\nOverrides: {data['overrides'] if data['overrides'] else 'None'}")
@@ -1494,11 +1536,13 @@ class AIGuardManager:
 
         if self.debug:
             print(f"\nCalling AI Guard with recipe: {test.get_recipe()}, prompt_messages: {test.messages[:3]}")
+            print(f"Data sent to AI Guard: {formatted_json_str(data)}")
 
         return self._ai_guard_data(data)
 
     def ai_guard_service(self, recipe: str, messages: List[Dict[str, str]]):
 
+        print(f"{DARK_GREEN}ai_guard_service(): Using recipe: {recipe}{RESET}")
         data = {"recipe": recipe, "messages": messages, "debug": self.debug}
 
         if self.debug:
@@ -1625,35 +1669,49 @@ class AIGuardTests:
             # Ensure we have a labels list
             testcase.label = testcase.label or []
 
+            print(f"{GREEN}1.load_from_file Start: testcase.label: {testcase.label}{RESET}")
+
             # The test case can have labels and expected_detectors.
-            # Need to set labels to the union of those.
             expected_detectors_labels = []
             if testcase.expected_detectors:
                 expected_detectors_labels = testcase.expected_detectors.get_expected_detector_labels()
             testcase.label.extend(expected_detectors_labels)
 
+            print(f"{GREEN}2.load_from_file Extend with expected_detectors_labels: {expected_detectors_labels} testcase.label: {testcase.label}{RESET}")
+
             # Then need to apply synonyms to the labels based on benign_labels and malicious_prompt_labels
-            # from the command line arguments. TODO: Pass those in to the constructor - don't
-            # get them straight from settings.args.
+            # from the command line arguments.
 
             # Need to make labels be restricted to the detectors enabled in the overrides 
             # and the labels it started with, and the lables in the expected_detectors.
             
             # Apply synonyms to expected_labels for "malicious-prompt"
+            ## TODO: Use defauls.malicious_prompt_str in place of literal to avoid typos.
             malicious_prompt_labels: List[str] = [l.strip().lower() for l in self.args.malicious_prompt_labels.split(",")] if self.args.malicious_prompt_labels else []
             if malicious_prompt_labels:
+                print(f"{GREEN}3.load_from_file testcase.label({testcase.label}) = apply_synonums({testcase.label},{malicious_prompt_labels},'malicious-prompt'){RESET}")
                 testcase.label = apply_synonyms(testcase.label, malicious_prompt_labels, "malicious-prompt")
+                print(f"{GREEN}4.load_from_file testcase.label:{testcase.label}{RESET}")
+
+
 
             # Apply synonyms to expected_labels for "benign", and then remove any
             # "benign" label because "benign" means "label not present", so nothing
             # expected.
+            ## TODO: Use defaults.benign_str in place of literal to avoid typos.
             benign_labels: List[str] = [l.strip().lower() for l in self.args.benign_labels.split(",")] if self.args.benign_labels else []
             if benign_labels:
-                testcase.label = apply_synonyms(testcase.label, benign_labels, "benign")
+                print(f"{GREEN}5.load_from_file testcase.label({testcase.label}) = apply_synonyms({testcase.label},{benign_labels},'benign'){RESET}")
+                testcase.label = apply_synonyms(
+                    testcase.label, benign_labels, "benign"
+                )
+                print(f"{GREEN}6.load_from_file testcase.label:{testcase.label}{RESET}")
                 if "benign" in testcase.label:
+                    print(f"{GREEN}7.load_from_file Removing 'benign' from testcase.label: {testcase.label}{RESET}")
                     testcase.label.remove("benign")  # Remove "benign" if it was added by synonyms
             # Now we have labels that are the union of expected_detectors_labels and the labels
             # from the test case, with synonyms applied.
+            print(f"{GREEN}8.load_from_file Final testcase.label: {testcase.label} should be the union of {expected_detectors_labels} and original labels from the test case.{RESET}")
 
             
             # Then we need to filter the labels to only those that are in the enabled detectors from the
@@ -1666,35 +1724,56 @@ class AIGuardTests:
             # settings.overrides inherited from the global settings if they exist.
             test_case_enabled_detectors = []
             if testcase.settings and getattr(testcase.settings, "overrides", None):
+                print(f"{GREEN}9.load_from_file testcase.settings.overrides: {testcase.settings.overrides}{RESET}")
                 test_case_enabled_detectors = testcase.settings.overrides.get_enabled_detector_labels() or []
+                print(f"{GREEN}10.load_from_file test_case_enabled_detectors: {test_case_enabled_detectors}{RESET}")
             elif self.settings and getattr(self.settings, "overrides", None):
+                print(f"{GREEN}11.load_from_file self.settings.overrides: {self.settings.overrides}{RESET}")
                 test_case_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
+                print(f"{GREEN}12.load_from_file test_case_enabled_detectors: {test_case_enabled_detectors}{RESET}")
 
             # Now want to add any enabled detectors from the command line args.            
             cmd_line_enabled_detectors = self.aig.enabled_detectors
+            print(f"{GREEN}13.load_from_file cmd_line_enabled_detectors: {cmd_line_enabled_detectors}{RESET}")
 
             effective_enabled_detectors = set(test_case_enabled_detectors + cmd_line_enabled_detectors)
+            print(f"{GREEN}14.load_from_file effective_enabled_detectors: {effective_enabled_detectors}{RESET}")
 
             testcase.index = len(self.tests) + 1  # Set index based on current length of tests
             # Use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
             # are valid and only those that are for enabled and supported detectors.
+            print(f"{GREEN}15.load_from_file Ensuring valid labels for testcase.label: {testcase.label} with effective_enabled_detectors: {effective_enabled_detectors}{RESET}")
             testcase.ensure_valid_labels(effective_enabled_detectors)
+            print(f"{GREEN}16.load_from_file Final testcase.label: {testcase.label} after ensuring valid labels.{RESET}")
 
             # Ensure system message and recipe
             # If system_prompt or recipe is specified on the command line, it should take precedence
             if self.args.system_prompt:
+                print(f"{GREEN}17.load_from_file Setting system_prompt: {self.args.system_prompt}{RESET}")
                 self.settings.system_prompt = self.args.system_prompt
                 testcase.ensure_system_message(self.args.system_prompt)
+                print(f"{GREEN}18.load_from_file testcase.get_system_message: {testcase.get_system_message()}{RESET}")
             else:
-                system_prompt = self.settings.system_prompt if self.settings else "You're a helpful assistant."
-                default_prompt = system_prompt or "You're a helpful assistant."
-                testcase.ensure_system_message(testcase.get_system_message(default_prompt))
+                print(f"{GREEN}19.load_from_file Using default system_prompt: {self.settings.system_prompt}{RESET}")
+                ## TODO: Use defaults.default_system_prompt in place of literal 
+                # "You're a helpful assistant." to avoid typos and ensure consistency everywhere.
+                system_prompt = self.settings.system_prompt if self.settings else defaults.default_system_prompt
+                default_prompt = system_prompt or defaults.default_system_prompt
+                print(f"{GREEN}20.load_from_file calling testcase.ensure_system_message({default_prompt}){RESET}")
+                ## TODO: FORCING A SYSTEM PROMPT IS CAUSING DISCREPENCIES WITH PROMPTLAB BEHAVIOR.
+                ## NOT A GOOD IDEA TO FORCE IT, AND IT INVOKES THE CONFORM/NONCONFORM BEHAVIOR.
+                # testcase.ensure_system_message(testcase.get_system_message(default_prompt))
             if self.args.recipe:
                 self.settings.recipe = self.args.recipe
+                print(f"{GREEN}21.load_from_file Setting recipe from args: {self.args.recipe}{RESET}")
                 testcase.ensure_recipe(self.args.recipe)
             else:
-                recipe = self.settings.recipe if self.settings else "pangea_prompt_guard"
+                print(f"{GREEN}22.load_from_file Using default recipe: {self.settings.recipe}{RESET}")
+                recipe = self.settings.recipe if self.settings else defaults.default_recipe #"pangea_prompt_guard"
                 testcase.ensure_recipe(recipe or "default_recipe")
+            print(f"{GREEN}23.load_from_file Final testcase.recipe: {testcase.get_recipe()}{RESET}")
+            print(f"{GREEN}24.load_from_file Final testcase.system_message: {testcase.get_system_message()}{RESET}")
+            print(f"{GREEN}25.load_from_file Final testcase.label: {testcase.label}{RESET}")
 
             self.tests.append(testcase)
 
@@ -1716,7 +1795,7 @@ class AIGuardTests:
                     print(f"{progress:.2f}%", end="\r", flush=True)
                     # TODO: Note that AIGuardManager that loads json and jsonl files already sets the index,
                     # but not sure if other methods will do so.
-                    test.index = index
+                    test.index = index+1
                     response = aig.ai_guard_test(test)
                     # TODO: Check promptlab behavior:
                     # Use the first user message (if available) for logging
@@ -1771,7 +1850,7 @@ class AIGuardTests:
                 self.tests.append(test)
 
             process_prompts()
-            aig.print_errors()
+            aig.efficacy.print_errors()
             aig.print_summary()
             return
 
@@ -1837,5 +1916,5 @@ class AIGuardTests:
                     self.tests.append(test)
 
         process_prompts()
-        aig.print_errors()
+        aig.efficacy.print_errors()
         aig.print_summary()

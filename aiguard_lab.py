@@ -34,9 +34,9 @@ def main():
 """File containing test cases to process. Supports multiple formats: 
 .txt    One prompt per line.
 .jsonl  JSON Lines format, each line is test case with labels and messages array:
-        {"labels": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}
+        {"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}
 .json   JSON file with a tests array of test cases, each labels and a messages array:
-        {"tests": [{"labels": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}]}
+        {"tests": [{"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}]}
         Supports optional global settings that provide defaults for all tests,
         including a system prompt to include in any test case that doesn't have one
         and detector configurations.
@@ -196,7 +196,7 @@ that override the recipe with explicit detectors.
     performance_group = parser.add_argument_group("Performance")
     performance_group.add_argument(
         "--rps",
-        type=int,
+        type=int, ## TODO: Set minimum to 1 and maximum to 100?
         default=defaults.default_rps,
         help=f"Requests per second (default: {defaults.default_rps})",
     )

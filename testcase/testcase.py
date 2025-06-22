@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from config.settings import Settings  # Assuming Settings is already defined in config/settings.py
 from defaults import defaults  # Assuming defaults is already defined in defaults/defaults.py
+from utils.utils import normalize_topics_and_detectors
 
 """
 Want expected_detectors to look like what AI Guard returns, e.g.:
@@ -111,7 +112,6 @@ Want expected_detectors to look like what AI Guard returns, e.g.:
     }
 """
 
-
 @dataclass
 class EntityResponse:
     type: str
@@ -158,16 +158,25 @@ class TopicResult:
     @property
     def data(self) -> Dict[str, List[TopicResponse]]:
         return {"topics": self.topics}
+
 @dataclass
 class ExpectedDetectors:
-    prompt_injection: Optional[DetectorResult]    = None
-    code_detection:   Optional[CodeResult]        = None
-    language_detection: Optional[DetectorResult]  = None
-    topic:            Optional[TopicResult]        = None
-    malicious_entity: Optional[EntityResult]      = None
-    custom_entity:    Optional[EntityResult]      = None
+    prompt_injection: Optional[DetectorResult] = None
+    code_detection: Optional[CodeResult] = None
+    language_detection: Optional[DetectorResult] = None
+    topic: Optional[TopicResult] = None
+    malicious_entity: Optional[EntityResult] = None
+    custom_entity: Optional[EntityResult] = None
 
     def get_expected_detector_labels(self) -> list[str]:
+        """
+        Using label[] accomplishes almost the same thing and is much easier, 
+        but this allows full specirication of expected detection result details.
+
+        Converts the expected detector objects into an easily consumable list of labels.
+        Returns a list of expected detector labels based on the detected properties.
+        This method checks the properties of the AIG_API_ExpectedDetectors instance
+        and constructs a list of labels that are expected to be present in the test case."""
         expected_labels: list[str] = []
 
         if self.prompt_injection and self.prompt_injection.detected:
@@ -336,44 +345,31 @@ class TestCase:
             self.settings = Settings()
         self.settings.recipe = default_recipe
 
-    def ensure_valid_labels(
-            self,
-            allowed_labels: list[str]) -> list[str]:
-        """Ensures that labels are valid according to the allowed_labels list."""
+    def ensure_valid_labels(self, allowed_labels: list[str]) -> list[str]:
+        """
+        Normalizes and filters self.label to keep only those present in normalized allowed_labels.
+        """
         if self.label is None:
             self.label = []
-        if self.label == []:
+        if not self.label:
             return self.label
-
-        # Ensure that labels is a list of lowercase strings with no leading or trailing whitespace:
-        labels = [lbl.strip().lower() for lbl in self.label if isinstance(lbl, str)]
-        self.label = labels
-        # Ensure each label is included only if it is in allowed_labels, and occurs at most once
-        valid_labels = list(set(lbl for lbl in self.label if lbl in allowed_labels))
-        if not valid_labels:
-            # TODO: there can be empty labels.
-            # raise ValueError(f"No valid labels found. Allowed labels are: {allowed_labels}")
-            self.label = []
-        else:
-            # If there are valid labels, set self.label to the valid labels
-            # This ensures that we only keep labels that are in the allowed list
-            # and removes duplicates.
-            self.label = valid_labels
-            # Remove any labels that are not in the valid detectors or topics
-            # This is to ensure that only labels we have a chance of detecting are measured.
-            for label in self.label[:]:  # Use a copy of the list to avoid modifying while iterating
-                if label not in defaults.valid_detectors and label not in defaults.valid_topics:
-                    labels.remove(label)
-            if not labels:
-                # If no valid labels remain, set self.label to an empty list
-                self.label = []
-
+        normalized_allowed, _ = normalize_topics_and_detectors(
+            allowed_labels, defaults.valid_detectors, defaults.valid_topics
+        )
+        normalized_labels, _ = normalize_topics_and_detectors(
+            self.label, defaults.valid_detectors, defaults.valid_topics
+        )
+        # Keep only those labels that are in the allowed set
+        filtered = [lbl for lbl in normalized_labels if lbl in normalized_allowed]
+        self.label = filtered
         return self.label
 
     def __repr__(self):
         return f"TestCase(settings={self.settings!r}, messages={self.messages!r})"
 
     @classmethod
+    # TODO: REVIEW ALL from_dict methods to ensure they are consistent and correct.
+    # Add more isinstance checks to ensure that the data is in the expected format.
     def from_dict(cls, data: dict) -> "TestCase":
         """
         Hydrate a TestCase instance from a raw dict.
@@ -387,6 +383,11 @@ class TestCase:
         expected_detectors = ExpectedDetectors.from_dict(ed_data) if hasattr(ExpectedDetectors, "from_dict") else ed_data
         # Labels
         labels = data.get("label", []) or data.get("labels", [])
+        if not isinstance(labels, list):
+            labels = [labels]
+        # Ensure labels are a list of strings
+        if not isinstance(labels, list) or not all(isinstance(lbl, str) for lbl in labels):
+            raise ValueError("Labels must be a list of strings.")
         return cls(
             messages=messages,
             label=labels,

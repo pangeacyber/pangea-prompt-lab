@@ -9,6 +9,55 @@ from typing import List, Dict
 from utils.colors import DARK_RED, DARK_YELLOW, GREEN, RESET
 
 
+# Helper function to normalize topics and detectors
+def normalize_topics_and_detectors(
+    labels: list[str],
+    valid_detectors: list[str],
+    valid_topics: list[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Normalize a list of label strings:
+      - Valid topics (with/without 'topic:' prefix) become 'topic:<name>'
+      - Valid detector names are left as-is
+      - Duplicates removed, order preserved
+      - Returns (normalized_list, invalid_list)
+    """
+    seen = set()
+    normalized = []
+    invalid = []
+
+    detectors_set = set(valid_detectors)
+    topics_set = set(valid_topics)
+
+    for label in labels:
+        lbl = label.strip().lower()
+        # Topic with prefix
+        if lbl.startswith("topic:"):
+            topic_name = lbl[6:]
+            if topic_name in topics_set:
+                norm = f"topic:{topic_name}"
+                if norm not in seen:
+                    normalized.append(norm)
+                    seen.add(norm)
+            else:
+                invalid.append(label)
+        # Raw topic name
+        elif lbl in topics_set:
+            norm = f"topic:{lbl}"
+            if norm not in seen:
+                normalized.append(norm)
+                seen.add(norm)
+        # Detector name
+        elif lbl in detectors_set:
+            if lbl not in seen:
+                normalized.append(lbl)
+                seen.add(lbl)
+        else:
+            invalid.append(label)
+
+    return normalized, invalid
+
+
 def apply_synonyms(labels, synonyms, replacement):
     """
     Replace any label in labels that matches a synonym in synonyms with the specified replacement.
