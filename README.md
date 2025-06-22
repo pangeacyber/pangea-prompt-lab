@@ -71,7 +71,7 @@ Test cases can be provided via `.json`, `.jsonl`, or `.txt` files.
 
 Basic usage:
 ```bash
-poetry run python aiguard_lab.py --input_file tests/test_dataset.json --detectors malicious-prompt,topic:toxicity,topic:health-coverage
+poetry run python aiguard_lab.py --input_file tests/test_dataset.json --detectors malicious-prompt
 ```
 
 You can also check a single prompt with assumed labels:
@@ -87,7 +87,7 @@ These formats support structured test cases. Each test case includes:
 - `messages`: A list of one or more chat messages, each with a `role` and `content`.
 - `label`: A list of strings corresponding to expected detectors or topics.
 
-Example:
+- Example:
 ```json
 [
   {
@@ -100,6 +100,9 @@ Example:
   }
 ]
 ```
+
+For more details on advanced (and in progress) test case attributres that control enabled detectors and expected_detectors see:
+- `tests/example.overrides.expected_detectors.json`
 
 ### .txt
 
@@ -148,32 +151,161 @@ The sample dataset (`tests/test_dataset.jsonl`) contains:
 - **Size:** Small sample with ~450 prompts.
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
 
+## CMD Line Help
+```bash
+usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS] [--topic_threshold TOPIC_THRESHOLD] [--fail_fast]
+                      [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE] [--report_title REPORT_TITLE] [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV]
+                      [--fns_out_csv FNS_OUT_CSV] [--print_label_stats] [--print_fps] [--print_fns] [--verbose] [--debug] [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
+
+Process prompts with AI Guard API.
+
+Specify a prompt or input file.
+
+options:
+  -h, --help            show this help message and exit
+
+Input arguments:
+  --prompt PROMPT       A single prompt string to check
+  --input_file INPUT_FILE
+                        File containing test cases to process. Supports multiple formats:
+                        .txt    One prompt per line.
+                        .jsonl  JSON Lines format, each line is test case with labels and messages array:
+                                {"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}
+                        .json   JSON file with a tests array of test cases, each labels and a messages array:
+                                {"tests": [{"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}]}
+                                Supports optional global settings that provide defaults for all tests,
+                                including a system prompt to include in any test case that doesn't have one
+                                and detector configurations.
+                                Each test case can specify its own settings to override global ones.
+                                Each test case can specify expected_detectors in addition to or as
+                                as an alternative to labels.
+
+Detection and evaluation configuration:
+  --system_prompt SYSTEM_PROMPT
+                        The system prompt to use for processing the prompt (default: None)
+  --force_system_prompt
+                        Force a system prompt even if there is none in the test case (default: False).
+                        NOTE: AI Guard conformance/non-conformance checks are based on a
+                              system prompt and only happen if one is present.
+  --detectors DETECTORS
+                        Comma separated list of detectors to use default:
+                        "malicious-prompt"
+                        Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.
+                        Available topic names:
+                        toxicity, self-harm-and-violence, roleplay, weapons, criminal-conduct, sexual, financial-advice, legal-advice, religion, politics, health-coverage, negative-sentiment, gibberish
+  --topic_threshold TOPIC_THRESHOLD
+                        Threshold for topic detection confidence. Only applies when using AI Guard with topics. Default: 1.0.
+  --fail_fast           Enable fail-fast mode: detectors will block and exit on first detection. By default, detectors report all detections.
+  --malicious_prompt_labels MALICIOUS_PROMPT_LABELS
+                        Comma separated list of labels that can be used to indicate a malicious prompt.
+                        Default: 'malicious, malicious_auto, malicious_prompt, malicious-prompt, prompt-injection, prompt-injection-auto, adversarial_prefix, adversarial_suffix, direct, direct_auto, direct-injection, indirect, injection, jailbreaking, multi-shot, not conform')
+                        Test cases containing any of these label values indicate that the malicious-prompt
+                        detector is expected to return a detection (it is an FN if it does not).
+                        Must not overlap with --benign_labels.
+  --benign_labels BENIGN_LABELS
+                        Comma separated list of labels that can be used to indicate a benign prompt.
+                        Default: 'benign, benign_auto, benign_prompt, conform')
+                        Test cases containing any of these label values indicate that the malicious-prompt
+                        detector is not expected to return a detection (it is an FP if it does).
+                        Must not overlap with --malicious_prompt_labels.
+  --recipe RECIPE       The recipe to use for processing the prompt.
+                        Useful when using --prompt for a single prompt.
+                        Available recipes:
+                        (all | pangea_ingestion_guard| pangea_prompt_guard| pangea_llm_prompt_guard| pangea_llm_response_guard| pangea_agent_pre_plan_guard| pangea_agent_pre_tool_guard| pangea_agent_post_tool_guard)
+                        Default: pangea_prompt_guard
+                        Use "all" to iteratively apply all recipes to the prompt (only supported for --prompt).
+
+                        Not appliccable when using --detectors or JSON test case objects
+                        that override the recipe with explicit detectors.
+
+Output and reporting:
+  --report_title REPORT_TITLE
+                        Optional title in report summary
+  --summary_report_file SUMMARY_REPORT_FILE
+                        Optional summary report file name
+  --fps_out_csv FPS_OUT_CSV
+                        Output CSV for false positives
+  --fns_out_csv FNS_OUT_CSV
+                        Output CSV for false negatives
+  --print_label_stats   Display per-label stats (FP/FN counts)
+  --print_fps           Print false positives after summary
+  --print_fns           Print false negatives after summary
+  --verbose             Enable verbose output (FPs, FNs as they occur, full errors).
+  --debug               Enable debug output (default: False)
+
+Assumptions for plain text prompts:
+  --assume_tps          Assume all prompts in a .txt file are true positives
+  --assume_tns          Assume all prompts in a .txt file are true negatives
+
+Performance:
+  --rps RPS             Requests per second (default: 15)
+  --max_poll_attempts MAX_POLL_ATTEMPTS
+                        Maximum poll (retry) attempts for 202 responses (default: 12)
+  --fp_check_only       When passing JSON file, only check for false negatives
+```
+
 ## Output and Metrics
 
 ```
-Processing 5 prompts with 10 workers
-100.00%
 AIGuard Efficacy Report
-Report generated at: 2025-06-21 22:34:59 PDT (UTC-0700)
-CMD: ./aiguard_lab.py --input_file tests/test_dataset.jsonl
+Report generated at: 2025-06-22 13:13:05 PDT (UTC-0700)
+CMD: ./aiguard_lab.py --input_file tests/test_dataset.jsonl --rps 80
 Input dataset: tests/test_dataset.jsonl
 Service: ai-guard
-Total Calls: 5
-Requests per second: 15
+Total Calls: 900
+Requests per second: 80
+
+Errors: Counter()
 
 --Overall Counts:--
-True Positives: 3
-True Negatives: 2
+True Positives: 137
+True Negatives: 757
 False Positives: 0
-False Negatives: 0
+False Negatives: 6
 
-Accuracy: 1.0000
+Accuracy: 0.9933
 Precision: 1.0000
-Recall: 1.0000
-F1 Score: 1.0000
+Recall: 0.9580
+F1 Score: 0.9786
 Specificity: 1.0000
 False Positive Rate: 0.0000
-False Negative Rate: 0.0000
+False Negative Rate: 0.0420
+
+Average duration: 0.1050 seconds
+Total calls: 900
+
+-- Info on Test Cases Saved for Reporting --
+NOTE: These are the test cases that had non-zero FP/FN/TP/TN stats.
+NOTE: TP and TN cases not saved unless track_tp_and_tn_cases is True.
+      track_tp_and_tn_cases: False
+Total Test Cases Saved: 6
+Saved Test Cases with FPs: 0
+Saved Test Cases with FNs: 6
+Saved Test Cases with TPs: 0
+Saved Test Cases with TNs: 0
+Summary of Per-detector FPs: {}
+Summary of Per-detector FNs: {'malicious-prompt': 6}
+
+Summary of Per-detector TPs: {'malicious-prompt': 137}
+Summary of Per-detector TNs: {'': 757}
+
+--Detector: malicious-prompt--
+True Positives: 137
+True Negatives: 0
+False Positives: 0
+False Negatives: 6
+
+Accuracy: 0.9580
+Precision: 1.0000
+Recall: 0.9580
+F1 Score: 0.9786
+Specificity: 0.0000
+False Positive Rate: 0.0000
+False Negative Rate: 0.0420
+
+
+Detected Detectors: {'prompt_injection': 137}
+Detected Analyzers: {'analyzer: PA4002, confidence: 1.0': 127, 'analyzer: PA4003, confidence: 1.0': 9, 'analyzer: PA4002, confidence: 0.97': 1}
 ```
 
 It also calculates accuracy, precision, recall, F1-score, and specificity, and logs any errors. Use `--fps_out_csv` / `--fns_out_csv` to save FP/FN prompts for further analysis.

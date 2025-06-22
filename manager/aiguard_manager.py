@@ -958,7 +958,7 @@ class AIGuardManager:
 
     def add_error_response(self, response):
         """ TODO: Allow error responses to be added to an output file and flushed to disk as they come in"""
-        self.efficacty.errors[response.status_code] += 1
+        self.efficacy.errors[response.status_code] += 1
         self.efficacy.error_responses.append(response)
 
     def add_duration(self, duration):
@@ -1566,6 +1566,13 @@ class AIGuardTests:
 
     def load_from_file(self, filename: str):
         """Load the test file and return an instance of AIGuardTestFile."""
+
+        # If the system_prompt and/or recipe is given on the command line, use it.
+        ## NOTE: DON'T force the system prompt unless --force-system-prompt is set.
+        ## Settings.system_prompt should be set up acording to those rules so we don't
+        ## need to check for that here - if it's in settings, use it, otherwise don't.
+        system_prompt = self.settings.system_prompt
+
         data_tests = []
         file_extension = os.path.splitext(filename)[1].lower()
         if file_extension == ".jsonl":
@@ -1636,10 +1643,13 @@ class AIGuardTests:
             else:
                 print(f"Error: Unexpected data type in test file: {type(data)}")
                 self.settings = Settings()
+
+            ## NOTE we could have loaded new settings from the file, so re-check system_prompt and recipe
             if self.args.system_prompt:
                 self.settings.system_prompt = self.args.system_prompt
             if self.args.recipe:
                 self.settings.recipe = self.args.recipe
+
 
         for idx, test_data in enumerate(data_tests, start=1):
             # print(f"Loading test case: {test_data}")
@@ -1662,85 +1672,87 @@ class AIGuardTests:
                 print(f"{DARK_RED}Test Case: {idx}: Skipping invalid test case ({e}): {test_data}{RESET}")
                 continue
 
-            # Ensure we have a labels list
-            testcase.label = testcase.label or []
-
-            # The test case can have labels and expected_detectors.
-            expected_detectors_labels = []
-            if testcase.expected_detectors:
-                expected_detectors_labels = testcase.expected_detectors.get_expected_detector_labels()
-            testcase.label.extend(expected_detectors_labels)
-
-            # Then need to apply synonyms to the labels based on benign_labels and malicious_prompt_labels
-            # from the command line arguments.
-
-            # Need to make labels be restricted to the detectors enabled in the overrides 
-            # and the labels it started with, and the lables in the expected_detectors.
-            
-            # Apply synonyms to expected_labels for "malicious-prompt"
-            ## TODO: Use defauls.malicious_prompt_str in place of literal to avoid typos.
-            malicious_prompt_labels: List[str] = [l.strip().lower() for l in self.args.malicious_prompt_labels.split(",")] if self.args.malicious_prompt_labels else []
-            if malicious_prompt_labels:
-                testcase.label = apply_synonyms(testcase.label, malicious_prompt_labels, "malicious-prompt")
-
-            # Apply synonyms to expected_labels for "benign", and then remove any
-            # "benign" label because "benign" means "label not present", so nothing
-            # expected.
-            ## TODO: Use defaults.benign_str in place of literal to avoid typos.
-            benign_labels: List[str] = [l.strip().lower() for l in self.args.benign_labels.split(",")] if self.args.benign_labels else []
-            if benign_labels:
-                testcase.label = apply_synonyms(
-                    testcase.label, benign_labels, "benign"
-                )
-                if "benign" in testcase.label:
-                    testcase.label.remove("benign")  # Remove "benign" if it was added by synonyms
-            # Now we have labels that are the union of expected_detectors_labels and the labels
-            # from the test case, with synonyms applied.
-
-            
-            # Then we need to filter the labels to only those that are in the enabled detectors from the
-            # test case + the command line --detectors arg: 
-            # effective_enabled_detectors = test_case_enabled_detectors + command_line_enabled_detectors
-            # Then we can use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
-            # are valid and only those that are for enabled and supported detectors.
-
-            # Test case enabled detectors are settings.overrides if they exist, otherwise from the 
-            # settings.overrides inherited from the global settings if they exist.
-            test_case_enabled_detectors = []
-            if testcase.settings and getattr(testcase.settings, "overrides", None):
-                test_case_enabled_detectors = testcase.settings.overrides.get_enabled_detector_labels() or []
-            elif self.settings and getattr(self.settings, "overrides", None):
-                test_case_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
-
-            # Now want to add any enabled detectors from the command line args.            
-            cmd_line_enabled_detectors = self.aig.enabled_detectors
-
-            effective_enabled_detectors = set(test_case_enabled_detectors + cmd_line_enabled_detectors)
-
-            testcase.index = len(self.tests) + 1  # Set index based on current length of tests
-            # Use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
-            # are valid and only those that are for enabled and supported detectors.
-            testcase.ensure_valid_labels(effective_enabled_detectors)
-
             # Ensure system message and recipe
             # If system_prompt or recipe is specified on the command line, it should take precedence
-            if self.args.system_prompt:
-                self.settings.system_prompt = self.args.system_prompt
-                testcase.ensure_system_message(self.args.system_prompt)
-            else:
-                ## TODO: Use defaults.default_system_prompt in place of literal 
-                # "You're a helpful assistant." to avoid typos and ensure consistency everywhere.
-                system_prompt = self.settings.system_prompt if self.settings else defaults.default_system_prompt
-                default_prompt = system_prompt or defaults.default_system_prompt
-                ## TODO: FORCING A SYSTEM PROMPT IS CAUSING DISCREPENCIES WITH PROMPTLAB BEHAVIOR.
-                ## NOT A GOOD IDEA TO FORCE IT, AND IT INVOKES THE CONFORM/NONCONFORM BEHAVIOR.
-                # testcase.ensure_system_message(testcase.get_system_message(default_prompt))
+            if system_prompt and system_prompt != "":
+                testcase.ensure_system_message(testcase.get_system_message(default_prompt))
             if self.args.recipe:
                 self.settings.recipe = self.args.recipe
                 testcase.ensure_recipe(self.args.recipe)
             else:
                 recipe = self.settings.recipe if self.settings else defaults.default_recipe #"pangea_prompt_guard"
-                testcase.ensure_recipe(recipe or "default_recipe")
+                testcase.ensure_recipe(recipe)
+
+            # Ensure we have a labels list
+            testcase.label = testcase.label or []
+            if self.args.assume_tps or self.args.assume_tns:
+                if self.args.assume_tps:
+                    ## NOTE: If assume_tps is on, then we assume that the test case is a true positive
+                    ## and we add the enabled detectors to the labels.
+                    for detector in self.aig.enabled_detectors:
+                        if detector not in testcase.label:
+                            testcase.label.append(detector)
+
+                if self.args.assume_tns:
+                    ## NOTE: If assume_tns is on, then we assume that the test case is a true negative
+                    ## and we remove all labels.
+                    testcase.label = []  # Clear labels for true negatives
+            else:
+                # The test case can have labels and expected_detectors.
+                expected_detectors_labels = []
+                if testcase.expected_detectors:
+                    expected_detectors_labels = testcase.expected_detectors.get_expected_detector_labels()
+                testcase.label.extend(expected_detectors_labels)
+
+                # Then need to apply synonyms to the labels based on benign_labels and malicious_prompt_labels
+                # from the command line arguments.
+
+                # Need to make labels be restricted to the detectors enabled in the overrides 
+                # and the labels it started with, and the lables in the expected_detectors.
+                
+                # Apply synonyms to expected_labels for "malicious-prompt"
+                ## TODO: Use defauls.malicious_prompt_str in place of literal to avoid typos.
+                malicious_prompt_labels: List[str] = [l.strip().lower() for l in self.args.malicious_prompt_labels.split(",")] if self.args.malicious_prompt_labels else []
+                if malicious_prompt_labels:
+                    testcase.label = apply_synonyms(testcase.label, malicious_prompt_labels, "malicious-prompt")
+
+                # Apply synonyms to expected_labels for "benign", and then remove any
+                # "benign" label because "benign" means "label not present", so nothing
+                # expected.
+                ## TODO: Use defaults.benign_str in place of literal to avoid typos.
+                benign_labels: List[str] = [l.strip().lower() for l in self.args.benign_labels.split(",")] if self.args.benign_labels else []
+                if benign_labels:
+                    testcase.label = apply_synonyms(
+                        testcase.label, benign_labels, "benign"
+                    )
+                    if "benign" in testcase.label:
+                        testcase.label.remove("benign")  # Remove "benign" if it was added by synonyms
+                # Now we have labels that are the union of expected_detectors_labels and the labels
+                # from the test case, with synonyms applied.
+
+                # Then we need to filter the labels to only those that are in the enabled detectors from the
+                # test case + the command line --detectors arg: 
+                # effective_enabled_detectors = test_case_enabled_detectors + command_line_enabled_detectors
+                # Then we can use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
+                # are valid and only those that are for enabled and supported detectors.
+
+                # Test case enabled detectors are settings.overrides if they exist, otherwise from the 
+                # settings.overrides inherited from the global settings if they exist.
+                test_case_enabled_detectors = []
+                if testcase.settings and getattr(testcase.settings, "overrides", None):
+                    test_case_enabled_detectors = testcase.settings.overrides.get_enabled_detector_labels() or []
+                elif self.settings and getattr(self.settings, "overrides", None):
+                    test_case_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
+
+                # Now want to add any enabled detectors from the command line args.            
+                cmd_line_enabled_detectors = self.aig.enabled_detectors
+
+                effective_enabled_detectors = set(test_case_enabled_detectors + cmd_line_enabled_detectors)
+
+                testcase.index = len(self.tests) + 1  # Set index based on current length of tests
+                # Use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
+                # are valid and only those that are for enabled and supported detectors.
+                testcase.ensure_valid_labels(effective_enabled_detectors)
 
             self.tests.append(testcase)
 
@@ -1786,8 +1798,16 @@ class AIGuardTests:
                 for future in as_completed(futures):
                     pass
 
-        # If the system_prompt and/or recipe is given on the command line, that should override everything in the file.
+        # If the system_prompt and/or recipe is given on the command line, use it.
+        ## NOTE: DON'T force the system prompt unless --force-system-prompt is set.
         system_prompt = args.system_prompt
+        if not system_prompt:
+            if args.force_system_prompt:
+                system_prompt = defaults.default_system_prompt
+
+        if system_prompt and system_prompt != "":
+            self.settings.system_prompt = system_prompt 
+
         recipe = args.recipe
 
         if system_prompt:
@@ -1798,11 +1818,9 @@ class AIGuardTests:
         # Single prompt
         if args.prompt:
             prompt = args.prompt
-            if not recipe:
-                recipe = "pangea_prompt_guard"
 
-            if not system_prompt:
-                system_prompt = "You're a helpful assistant."
+            if not recipe:
+                recipe = defaults.default_recipe
 
             if recipe == "all":
                 recipes = defaults.default_recipes
@@ -1812,8 +1830,20 @@ class AIGuardTests:
             for rec in recipes:
                 settings = Settings(system_prompt=system_prompt, recipe=rec)
                 test = TestCase(messages=[{"role": "user", "content": prompt}], settings=settings)
-                test.ensure_system_message(system_prompt)
+                if system_prompt and system_prompt != "":
+                    test.ensure_system_message(system_prompt)
                 test.ensure_recipe(rec)
+                if self.args.assume_tps or self.args.assume_tns:
+                    if self.args.assume_tps:
+                        # If assume_tps is on, then we assume that the test case is a true positive
+                        # and we add the enabled detectors to the labels.
+                        for detector in aig.enabled_detectors:
+                            if detector not in test.label:
+                                test.label.append(detector)
+                    if self.args.assume_tns:
+                        # If assume_tns is on, then we assume that the test case is a true negative
+                        # and we remove all labels.
+                        test.label = []
                 self.tests.append(test)
 
             process_prompts()
@@ -1864,21 +1894,43 @@ class AIGuardTests:
                     test = TestCase(messages=[{"role": "user", "content": prompt[1]}])
                     test.ensure_system_message(prompt[0])
                     test.ensure_recipe(recipe)
+                    if self.args.assume_tps or self.args.assume_tns:
+                        if self.args.assume_tps:
+                            # If assume_tps is on, then we assume that the test case is a true positive
+                            # and we add the enabled detectors to the labels.
+                            for detector in aig.enabled_detectors:
+                                if detector not in test.label:
+                                    test.label.append(detector)
+                        if self.args.assume_tns:
+                            # If assume_tns is on, then we assume that the test case is a true negative
+                            # and we remove all labels.
+                            test.label = []
+
                     self.tests.append(test)
         else:
-            if not recipe:
-                recipe = "pangea_prompt_guard"
-            if not system_prompt:
-                system_prompt = "You're a helpful assistant"
-
             # Assume it is a text file with one prompt per line
+            if not recipe:
+                recipe = defaults.default_recipe
+
             print(f"Assuming text file input: {input_file}")
             prompts = []
             with open(input_file, "r") as file:
                 for prompt in file:
                     prompt.strip().replace("\n", "").replace("\r", "")
                     test = TestCase(messages=[{"role": "user", "content": prompt}])
-                    test.ensure_system_message(system_prompt)
+                    if system_prompt and system_prompt != "":
+                        test.ensure_system_message(system_prompt)
+                if self.args.assume_tps or self.args.assume_tns:
+                    if self.args.assume_tps:
+                        # If assume_tps is on, then we assume that the test case is a true positive
+                        # and we add the enabled detectors to the labels.
+                        for detector in aig.enabled_detectors:
+                            if detector not in test.label:
+                                test.label.append(detector)
+                    if self.args.assume_tns:
+                        # If assume_tns is on, then we assume that the test case is a true negative
+                        # and we remove all labels.
+                        test.label = []
                     test.ensure_recipe(recipe)
                     self.tests.append(test)
 

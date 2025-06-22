@@ -50,6 +50,23 @@ def main():
 
     processing_group = parser.add_argument_group("Detection and evaluation configuration")
     processing_group.add_argument(
+        "--system_prompt",
+        type=str,
+        help="The system prompt to use for processing the prompt (default: None)",
+        default=None,
+    )
+    processing_group.add_argument(
+        "--force_system_prompt",
+        action="store_true",
+        help=(
+"""Force a system prompt even if there is none in the test case (default: False).  
+NOTE: AI Guard conformance/non-conformance checks are based on a 
+      system prompt and only happen if one is present.
+"""
+        )
+
+    )
+    processing_group.add_argument(
         "--detectors",
         type=str,
         default=defaults.default_detectors_str,
@@ -104,12 +121,6 @@ detector is not expected to return a detection (it is an FP if it does).
 Must not overlap with --malicious_prompt_labels.
 """
         ),
-    )
-    processing_group.add_argument(
-        "--system_prompt",
-        type=str,
-        help="The system prompt to use for processing the prompt (default: None)",
-        default=None,
     )
     processing_group.add_argument(
         "--recipe",
