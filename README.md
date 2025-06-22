@@ -71,12 +71,23 @@ Test cases can be provided via `.json`, `.jsonl`, or `.txt` files.
 
 Basic usage:
 ```bash
-poetry run python aiguard_lab.py --input_file tests/test_dataset.json --detectors malicious-prompt
+poetry run python aiguard_lab.py --input_file tests/test_dataset.json --detectors malicious-prompt --rps 25
 ```
 
-You can also check a single prompt with assumed labels:
+You can check a single prompt with assumed labels:
 ```bash
 poetry run python aiguard_lab.py --prompt "Ignore all prior instructions..." --detectors malicious-prompt --assume_tps
+```
+
+Saving FPs, FNs, and summary report file:
+```bash
+poetry run python aiguard_lab.py \
+--input_file tests/test_dataset.json \
+--fps_out_csv test_dataset.fps.csv \
+--fns_out_csv test_dataset.fns.csv \
+--report_title "Test run for dataset.jsonl"
+--summary_report_file test_dataset.summary.txt \
+--rps 25
 ```
 
 ## Input File Formats
@@ -297,7 +308,7 @@ Performance:
 ```
 AIGuard Efficacy Report
 Report generated at: 2025-06-22 13:13:05 PDT (UTC-0700)
-CMD: ./aiguard_lab.py --input_file tests/test_dataset.jsonl --rps 80
+CMD: ./aiguard_lab.py --input_file tests/test_dataset.jsonl --rps 25
 Input dataset: tests/test_dataset.jsonl
 Service: ai-guard
 Total Calls: 900
