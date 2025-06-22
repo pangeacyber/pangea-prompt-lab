@@ -185,33 +185,72 @@ Detection and evaluation configuration:
                         The system prompt to use for processing the prompt (default: None)
   --force_system_prompt
                         Force a system prompt even if there is none in the test case (default: False).
-                        NOTE: AI Guard conformance/non-conformance checks are based on a
-                              system prompt and only happen if one is present.
+                        NOTE: AI Guard conformance/non-conformance checks are based on a system prompt and only happen if one is present.
   --detectors DETECTORS
-                        Comma separated list of detectors to use default:
-                        "malicious-prompt"
+                        Comma separated list of detectors to use.
+                         Default:'
+                        malicious-prompt'
                         Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.
                         Available topic names:
-                        toxicity, self-harm-and-violence, roleplay, weapons, criminal-conduct, sexual, financial-advice, legal-advice, religion, politics, health-coverage, negative-sentiment, gibberish
+                        'toxicity,
+                          self-harm-and-violence,
+                          roleplay,
+                          weapons,
+                          criminal-conduct,
+                          sexual,
+                          financial-advice,
+                          legal-advice,
+                          religion,
+                          politics,
+                          health-coverage,
+                          negative-sentiment,
+                          gibberish'
   --topic_threshold TOPIC_THRESHOLD
                         Threshold for topic detection confidence. Only applies when using AI Guard with topics. Default: 1.0.
   --fail_fast           Enable fail-fast mode: detectors will block and exit on first detection. By default, detectors report all detections.
   --malicious_prompt_labels MALICIOUS_PROMPT_LABELS
-                        Comma separated list of labels that can be used to indicate a malicious prompt.
-                        Default: 'malicious, malicious_auto, malicious_prompt, malicious-prompt, prompt-injection, prompt-injection-auto, adversarial_prefix, adversarial_suffix, direct, direct_auto, direct-injection, indirect, injection, jailbreaking, multi-shot, not conform')
-                        Test cases containing any of these label values indicate that the malicious-prompt
-                        detector is expected to return a detection (it is an FN if it does not).
+                        Comma separated list of labels indicating a malicious prompt.
+                        Default:
+                        'malicious,
+                          malicious_auto,
+                          malicious_prompt,
+                          malicious-prompt,
+                          prompt-injection,
+                          prompt-injection-auto,
+                          adversarial_prefix,
+                          adversarial_suffix,
+                          direct,
+                          direct_auto,
+                          direct-injection,
+                          indirect,
+                          injection,
+                          jailbreaking,
+                          multi-shot,
+                          not conform'
+                        Test cases with any of these labels expect the malicious-prompt
+                        detector to return a detection (FN if it does not).
                         Must not overlap with --benign_labels.
   --benign_labels BENIGN_LABELS
-                        Comma separated list of labels that can be used to indicate a benign prompt.
-                        Default: 'benign, benign_auto, benign_prompt, conform')
-                        Test cases containing any of these label values indicate that the malicious-prompt
-                        detector is not expected to return a detection (it is an FP if it does).
+                        Comma separated list of labels indicating a benign prompt.
+                        Default:
+                        'benign,
+                          benign_auto,
+                          benign_prompt,
+                          conform'
+                        Test cases with any of these labels expect the malicious-prompt
+                        detector NOT to return a detection (FP if it does).
                         Must not overlap with --malicious_prompt_labels.
   --recipe RECIPE       The recipe to use for processing the prompt.
                         Useful when using --prompt for a single prompt.
                         Available recipes:
-                        (all | pangea_ingestion_guard| pangea_prompt_guard| pangea_llm_prompt_guard| pangea_llm_response_guard| pangea_agent_pre_plan_guard| pangea_agent_pre_tool_guard| pangea_agent_post_tool_guard)
+                          all
+                          pangea_ingestion_guard
+                          pangea_prompt_guard
+                          pangea_llm_prompt_guard
+                          pangea_llm_response_guard
+                          pangea_agent_pre_plan_guard
+                          pangea_agent_pre_tool_guard
+                          pangea_agent_post_tool_guard
                         Default: pangea_prompt_guard
                         Use "all" to iteratively apply all recipes to the prompt (only supported for --prompt).
 
