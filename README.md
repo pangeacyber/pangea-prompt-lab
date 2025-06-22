@@ -148,18 +148,18 @@ Plaintext format with one prompt per line. Use with either:
 ## Sample Dataset
 
 The sample dataset (`tests/test_dataset.jsonl`) contains:
-- **Size:** Small sample with ~450 prompts.
+- **Size:** 900 prompts.
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
 
 ## CMD Line Help
-```bash
-usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS] [--topic_threshold TOPIC_THRESHOLD] [--fail_fast]
-                      [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE] [--report_title REPORT_TITLE] [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV]
-                      [--fns_out_csv FNS_OUT_CSV] [--print_label_stats] [--print_fps] [--print_fns] [--verbose] [--debug] [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
+```
+usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS]
+                      [--topic_threshold TOPIC_THRESHOLD] [--fail_fast] [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE]
+                      [--report_title REPORT_TITLE] [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV] [--fns_out_csv FNS_OUT_CSV] [--print_label_stats]
+                      [--print_fps] [--print_fns] [--verbose] [--debug] [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
 
 Process prompts with AI Guard API.
-
-Specify a prompt or input file.
+Specify a --prompt or --input_file
 
 options:
   -h, --help            show this help message and exit
@@ -169,30 +169,36 @@ Input arguments:
   --input_file INPUT_FILE
                         File containing test cases to process. Supports multiple formats:
                         .txt    One prompt per line.
-                        .jsonl  JSON Lines format, each line is test case with labels and messages array:
+                        .jsonl  JSON Lines format, each line is test case with labels and
+                                messages array:
                                 {"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}
-                        .json   JSON file with a tests array of test cases, each labels and a messages array:
+                        .json   JSON file with a tests array of test cases, each labels and a
+                                messages array:
                                 {"tests": [{"label": ["malicious"], "messages": [{"role": "user", "content": "prompt"}]}]}
-                                Supports optional global settings that provide defaults for all tests,
-                                including a system prompt to include in any test case that doesn't have one
-                                and detector configurations.
-                                Each test case can specify its own settings to override global ones.
-                                Each test case can specify expected_detectors in addition to or as
+                                Supports optional global settings that provide defaults for all
+                                tests.
+                                Each test case can specify its own settings to override global
+                                ones.
+                                Each test case can specify expected_detectors in addition to or
                                 as an alternative to labels.
 
 Detection and evaluation configuration:
   --system_prompt SYSTEM_PROMPT
                         The system prompt to use for processing the prompt (default: None)
   --force_system_prompt
-                        Force a system prompt even if there is none in the test case (default: False).
-                        NOTE: AI Guard conformance/non-conformance checks are based on a system prompt and only happen if one is present.
+                        Force a system prompt even if there is none in the test case
+                        (default: False).
+                        NOTE: AI Guard conformance/non-conformance checks are based on a
+                              system prompt and only happen if one is present.
   --detectors DETECTORS
                         Comma separated list of detectors to use.
-                         Default:'
-                        malicious-prompt'
+                        Default:
+                          malicious-prompt
+                        Available detectors:
+                          malicious-prompt, topc:<topic-name>
                         Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.
                         Available topic names:
-                        'toxicity,
+                          toxicity,
                           self-harm-and-violence,
                           roleplay,
                           weapons,
@@ -204,14 +210,16 @@ Detection and evaluation configuration:
                           politics,
                           health-coverage,
                           negative-sentiment,
-                          gibberish'
+                          gibberish
   --topic_threshold TOPIC_THRESHOLD
-                        Threshold for topic detection confidence. Only applies when using AI Guard with topics. Default: 1.0.
-  --fail_fast           Enable fail-fast mode: detectors will block and exit on first detection. By default, detectors report all detections.
+                        Threshold for topic detection confidence. Only applies when using
+                        AI Guard with topics. Default: 1.0.
+  --fail_fast           Enable fail-fast mode: detectors will block and exit on first
+                        detection. Default: False.
   --malicious_prompt_labels MALICIOUS_PROMPT_LABELS
                         Comma separated list of labels indicating a malicious prompt.
                         Default:
-                        'malicious,
+                          malicious,
                           malicious_auto,
                           malicious_prompt,
                           malicious-prompt,
@@ -226,17 +234,17 @@ Detection and evaluation configuration:
                           injection,
                           jailbreaking,
                           multi-shot,
-                          not conform'
+                          not conform
                         Test cases with any of these labels expect the malicious-prompt
                         detector to return a detection (FN if it does not).
                         Must not overlap with --benign_labels.
   --benign_labels BENIGN_LABELS
                         Comma separated list of labels indicating a benign prompt.
                         Default:
-                        'benign,
+                          benign,
                           benign_auto,
                           benign_prompt,
-                          conform'
+                          conform
                         Test cases with any of these labels expect the malicious-prompt
                         detector NOT to return a detection (FP if it does).
                         Must not overlap with --malicious_prompt_labels.
@@ -252,7 +260,8 @@ Detection and evaluation configuration:
                           pangea_agent_pre_tool_guard
                           pangea_agent_post_tool_guard
                         Default: pangea_prompt_guard
-                        Use "all" to iteratively apply all recipes to the prompt (only supported for --prompt).
+                        Use "all" to iteratively apply all recipes to the prompt
+                        (only supported for --prompt).
 
                         Not appliccable when using --detectors or JSON test case objects
                         that override the recipe with explicit detectors.

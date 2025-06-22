@@ -20,8 +20,8 @@ def determine_injection(labels):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Process prompts with AI Guard API.\n\nSpecify a prompt or "
-                    "input file.",
+        description="Process prompts with AI Guard API.\n"
+        "Specify a --prompt or --input_file",
         formatter_class=argparse.RawTextHelpFormatter
     )
 
@@ -34,23 +34,19 @@ def main():
         help=(
             "File containing test cases to process. Supports multiple formats:\n"
             ".txt    One prompt per line.\n"
-            ".jsonl  JSON Lines format, each line is test case with labels and "
-            "messages array:\n"
+            ".jsonl  JSON Lines format, each line is test case with labels and\n"
+            "        messages array:\n"
             "        {\"label\": [\"malicious\"], \"messages\": [{\"role\": \"user\", "
             "\"content\": \"prompt\"}]}\n"
-            ".json   JSON file with a tests array of test cases, each labels and a "
-            "messages array:\n"
+            ".json   JSON file with a tests array of test cases, each labels and a \n"
+            "        messages array:\n"
             "        {\"tests\": [{\"label\": [\"malicious\"], \"messages\": [{\"role\": "
             "\"user\", \"content\": \"prompt\"}]}]}\n"
-            "        Supports optional global settings that provide defaults for all "
-            "tests,\n"
-            "        including a system prompt to include in any test case that "
-            "doesn't have one\n"
-            "        and detector configurations.\n"
-            "        Each test case can specify its own settings to override global "
-            "ones.\n"
-            "        Each test case can specify expected_detectors in addition to or "
-            "as\n"
+            "        Supports optional global settings that provide defaults for all\n"
+            "        tests.\n"
+            "        Each test case can specify its own settings to override global \n"
+            "        ones.\n"
+            "        Each test case can specify expected_detectors in addition to or \n"
             "        as an alternative to labels.\n"
 ## TODO: Document .csv format and suppot
         ),
@@ -67,10 +63,10 @@ def main():
         "--force_system_prompt",
         action="store_true",
         help=(
-            "Force a system prompt even if there is none in the test case "
+            "Force a system prompt even if there is none in the test case\n"
             "(default: False).\n"
-            "NOTE: AI Guard conformance/non-conformance checks are based on a "
-            "system prompt and only happen if one is present.\n"
+            "NOTE: AI Guard conformance/non-conformance checks are based on a \n"
+            "      system prompt and only happen if one is present.\n"
         )
     )
     processing_group.add_argument(
@@ -79,11 +75,13 @@ def main():
         default=defaults.default_detectors_str,
         help=(
             "Comma separated list of detectors to use.\n"
-            + " Default:'\n"
-            + defaults.default_detectors_str.replace(', ', ',\n  ') + "'\n"
+            + "Default:\n  "
+            + defaults.default_detectors_str.replace(', ', ',\n  ') + "\n"
+            + "Available detectors:\n  malicious-prompt, topc:<topic-name>\n"
+            # + defaults.valid_detectors_str.replace(', ', ',\n  ') + "\n"
             + "Use 'topic:<topic-name>' or just '<topic-name>' for topic detectors.\n"
-            + "Available topic names:\n'"
-            + defaults.valid_topics_str.replace(', ', ',\n  ') + "'\n"
+            + "Available topic names:\n  "
+            + defaults.valid_topics_str.replace(', ', ',\n  ') + "\n"
         ),
     )
     processing_group.add_argument(
@@ -91,16 +89,16 @@ def main():
         type=float,
         default=defaults.topic_threshold,
         help=(
-            "Threshold for topic detection confidence. Only applies when using AI "
-            f"Guard with topics. Default: {defaults.topic_threshold}."
+            "Threshold for topic detection confidence. Only applies when using\n"
+            f"AI Guard with topics. Default: {defaults.topic_threshold}."
         ),
     )    
     processing_group.add_argument(
         "--fail_fast",
         action="store_true",
         help=(
-            "Enable fail-fast mode: detectors will block and exit on first "
-            "detection. By default, detectors report all detections."
+            "Enable fail-fast mode: detectors will block and exit on first\n"
+            "detection. Default: False.\n"
         ),
     )
     processing_group.add_argument(
@@ -109,8 +107,8 @@ def main():
         default=defaults.malicious_prompt_labels_str,
         help=(
             "Comma separated list of labels indicating a malicious prompt.\n"
-            + "Default:\n'" 
-            + defaults.malicious_prompt_labels_str.replace(', ', ',\n  ') + "'\n"
+            + "Default:\n  " 
+            + defaults.malicious_prompt_labels_str.replace(', ', ',\n  ') + "\n"
             + "Test cases with any of these labels expect the malicious-prompt\n"
             + "detector to return a detection (FN if it does not).\n"
             + "Must not overlap with --benign_labels."
@@ -122,8 +120,8 @@ def main():
         default=defaults.benign_labels_str,
         help=(
             "Comma separated list of labels indicating a benign prompt.\n"
-            + "Default:\n'" 
-            + defaults.benign_labels_str.replace(', ', ',\n  ') + "'\n"
+            + "Default:\n  " 
+            + defaults.benign_labels_str.replace(', ', ',\n  ') + "\n"
             + "Test cases with any of these labels expect the malicious-prompt\n"
             + "detector NOT to return a detection (FP if it does).\n"
             + "Must not overlap with --malicious_prompt_labels."
@@ -139,8 +137,8 @@ def main():
             "  all\n"
             + ''.join([f"  {r}\n" for r in defaults.default_recipes]) +
             f"Default: {defaults.default_recipe if defaults.default_recipe else 'None'}\n"
-            "Use \"all\" to iteratively apply all recipes to the prompt (only "
-            "supported for --prompt).\n\n"
+            "Use \"all\" to iteratively apply all recipes to the prompt\n"
+            "(only supported for --prompt).\n\n"
             "Not appliccable when using --detectors or JSON test case objects\n"
             "that override the recipe with explicit detectors."
         ),
