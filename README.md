@@ -27,7 +27,14 @@ This tool is a successor to the [`pangea-prompt-lab`](https://github.com/pangeac
 ## Prerequisites
 
 - Python v3.10 or greater
-- Poetry v1.x or greater
+- Poetry v2.x or greater
+- Clone and Install Dependencies:
+
+   ```bash
+   git clone https://github.com/pangeacyber/pangea-aiguard-lab
+   cd pangea-aiguard-lab
+   poetry install   
+   ```
 - Pangea's AI Guard:
    1. Sign up for a free [Pangea account](https://pangea.cloud/signup).
    2. After creating your account and first project, skip the wizards. This will take you to the Pangea User Console, where you can enable the service.
@@ -57,12 +64,6 @@ This tool is a successor to the [`pangea-prompt-lab`](https://github.com/pangeac
 
       > Use your project **Domain** value as part of the base URL. Including the full base URL allows this tool to work with custom deployments, including those accessed locally via port forwarding.
 
-- Install dependencies:
-
-   ```bash
-   poetry install --no-root
-   ```
-
 ## Usage
 
 The preferred usage is to define which detectors should run using the `--detectors` parameter, and to indicate which are expected to trigger on a per-test basis using a `"label"` array in the test case.
@@ -82,6 +83,17 @@ poetry run python aiguard_lab.py --prompt "Ignore all prior instructions..." --d
 Saving FPs, FNs, and summary report file:
 ```bash
 poetry run python aiguard_lab.py \
+--input_file data/test_dataset.jsonl \
+--fps_out_csv test_dataset.fps.csv \
+--fns_out_csv test_dataset.fns.csv \
+--report_title "Test run for dataset.jsonl"
+--summary_report_file test_dataset.summary.txt \
+--rps 25
+```
+
+NOTE: You can run the tool without `poetry run python`, for example:
+```bash
+./aiguard_lab.py \
 --input_file data/test_dataset.jsonl \
 --fps_out_csv test_dataset.fps.csv \
 --fns_out_csv test_dataset.fns.csv \
