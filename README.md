@@ -33,7 +33,7 @@ This tool is a successor to the [`pangea-prompt-lab`](https://github.com/pangeac
    ```bash
    git clone https://github.com/pangeacyber/pangea-aiguard-lab
    cd pangea-aiguard-lab
-   poetry install   
+   poetry install --no-root
    ```
 - Pangea's AI Guard:
    1. Sign up for a free [Pangea account](https://pangea.cloud/signup).
