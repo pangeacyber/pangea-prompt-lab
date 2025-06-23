@@ -20,6 +20,7 @@ def normalize_topics_and_detectors(
       - Valid topics (with/without 'topic:' prefix) become 'topic:<name>'
       - Valid detector names are left as-is
       - Duplicates removed, order preserved
+      - If "topic" is there by itself, just remove it (TODO: Or just add all topics?).
       - Returns (normalized_list, invalid_list)
     """
     seen = set()

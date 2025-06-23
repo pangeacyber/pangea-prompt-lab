@@ -17,6 +17,15 @@ def determine_injection(labels):
     else:
         return True  # Assume injection if not labeled as benign
 
+def bounded_int(min_val, max_val):
+    def checker(val):
+        ival = int(val)
+        if ival < min_val or ival > max_val:
+            raise argparse.ArgumentTypeError(
+                f"Value must be between {min_val} and {max_val}"
+            )
+        return ival
+    return checker
 
 def main():
     parser = argparse.ArgumentParser(
@@ -212,9 +221,9 @@ def main():
     performance_group = parser.add_argument_group("Performance")
     performance_group.add_argument(
         "--rps",
-        type=int, ## TODO: Set minimum to 1 and maximum to 100?
+        type=bounded_int(1, defaults.max_rps),
         default=defaults.default_rps,
-        help=f"Requests per second (default: {defaults.default_rps})",
+        help=f"Requests per second (1-100 allowed. Default: {defaults.default_rps})",
     )
     performance_group.add_argument(
         "--max_poll_attempts",
