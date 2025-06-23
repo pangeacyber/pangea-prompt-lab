@@ -63,6 +63,8 @@ This tool is a successor to the [`pangea-prompt-lab`](https://github.com/pangeac
       Then populate it using the **Domain** and **Default Token** values from the service configuration.
 
       > Use your project **Domain** value as part of the base URL. Including the full base URL allows this tool to work with custom deployments, including those accessed locally via port forwarding.
+   
+   - NOTE: If you get 400 or 403 errors when running aiguard_lab.py, the cause is most likely incorrect values for PANGEA_BASE_URL and/or PANGEA_AI_GUARD_TOKEN.
 
 ## Usage
 
