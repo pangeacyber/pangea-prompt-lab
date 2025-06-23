@@ -71,7 +71,7 @@ Test cases can be provided via `.json`, `.jsonl`, or `.txt` files.
 
 Basic usage:
 ```bash
-poetry run python aiguard_lab.py --input_file data/test_dataset.json --detectors malicious-prompt --rps 25
+poetry run python aiguard_lab.py --input_file data/test_dataset.jsonl --detectors malicious-prompt --rps 25
 ```
 
 You can check a single prompt with assumed labels:
@@ -82,7 +82,7 @@ poetry run python aiguard_lab.py --prompt "Ignore all prior instructions..." --d
 Saving FPs, FNs, and summary report file:
 ```bash
 poetry run python aiguard_lab.py \
---input_file data/test_dataset.json \
+--input_file data/test_dataset.jsonl \
 --fps_out_csv test_dataset.fps.csv \
 --fns_out_csv test_dataset.fns.csv \
 --report_title "Test run for dataset.jsonl"
@@ -164,10 +164,10 @@ The sample dataset (`data/test_dataset.jsonl`) contains:
 
 ## CMD Line Help
 ```
-usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS]
-                      [--topic_threshold TOPIC_THRESHOLD] [--fail_fast] [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE]
-                      [--report_title REPORT_TITLE] [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV] [--fns_out_csv FNS_OUT_CSV] [--print_label_stats]
-                      [--print_fps] [--print_fns] [--verbose] [--debug] [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
+usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS] [--topic_threshold TOPIC_THRESHOLD]
+                      [--fail_fast] [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE] [--report_title REPORT_TITLE]
+                      [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV] [--fns_out_csv FNS_OUT_CSV] [--print_label_stats] [--print_fps] [--print_fns] [--verbose] [--debug]
+                      [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
 
 Process prompts with AI Guard API.
 Specify a --prompt or --input_file
@@ -297,11 +297,10 @@ Assumptions for plain text prompts:
   --assume_tns          Assume all prompts in a .txt file are true negatives
 
 Performance:
-  --rps RPS             Requests per second (default: 15)
+  --rps RPS             Requests per second (1-100 allowed. Default: 15)
   --max_poll_attempts MAX_POLL_ATTEMPTS
                         Maximum poll (retry) attempts for 202 responses (default: 12)
-  --fp_check_only       When passing JSON file, only check for false negatives
-```
+  --fp_check_only       When passing JSON file, only check for false negatives```
 
 ## Output and Metrics
 
