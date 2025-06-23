@@ -178,10 +178,10 @@ The sample dataset (`data/test_dataset.jsonl`) contains:
 
 ## CMD Line Help
 ```
-usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS] [--topic_threshold TOPIC_THRESHOLD]
-                      [--fail_fast] [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE] [--report_title REPORT_TITLE]
-                      [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV] [--fns_out_csv FNS_OUT_CSV] [--print_label_stats] [--print_fps] [--print_fns] [--verbose] [--debug]
-                      [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
+usage: aiguard_lab.py [-h] (--prompt PROMPT | --input_file INPUT_FILE) [--system_prompt SYSTEM_PROMPT] [--force_system_prompt] [--detectors DETECTORS] [--report_any_topic]
+                      [--topic_threshold TOPIC_THRESHOLD] [--fail_fast] [--malicious_prompt_labels MALICIOUS_PROMPT_LABELS] [--benign_labels BENIGN_LABELS] [--recipe RECIPE]
+                      [--report_title REPORT_TITLE] [--summary_report_file SUMMARY_REPORT_FILE] [--fps_out_csv FPS_OUT_CSV] [--fns_out_csv FNS_OUT_CSV] [--print_label_stats] [--print_fps]
+                      [--print_fns] [--verbose] [--debug] [--assume_tps | --assume_tns] [--rps RPS] [--max_poll_attempts MAX_POLL_ATTEMPTS] [--fp_check_only]
 
 Process prompts with AI Guard API.
 Specify a --prompt or --input_file
@@ -236,6 +236,9 @@ Detection and evaluation configuration:
                           health-coverage,
                           negative-sentiment,
                           gibberish
+  --report_any_topic    Report any topic detection, even if not specified in --detectors.
+                        This will report all detected topics in the response, regardless of
+                        whether they are explicitly requested or not. Default: False.
   --topic_threshold TOPIC_THRESHOLD
                         Threshold for topic detection confidence. Only applies when using
                         AI Guard with topics. Default: 1.0.
@@ -314,8 +317,8 @@ Performance:
   --rps RPS             Requests per second (1-100 allowed. Default: 15)
   --max_poll_attempts MAX_POLL_ATTEMPTS
                         Maximum poll (retry) attempts for 202 responses (default: 12)
-  --fp_check_only       When passing JSON file, only check for false negatives```
-
+  --fp_check_only       When passing JSON file, only check for false negatives
+```
 ## Output and Metrics
 
 ```

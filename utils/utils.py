@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 from typing import List, Dict
 from utils.colors import DARK_RED, DARK_YELLOW, GREEN, RESET
+from defaults import defaults
 
 
 # Helper function to normalize topics and detectors
@@ -33,10 +34,11 @@ def normalize_topics_and_detectors(
     for label in labels:
         lbl = label.strip().lower()
         # Topic with prefix
-        if lbl.startswith("topic:"):
-            topic_name = lbl[6:]
+        if lbl.startswith(defaults.topic_prefix):
+            prefix_len = len(defaults.topic_prefix)
+            topic_name = lbl[prefix_len:]
             if topic_name in topics_set:
-                norm = f"topic:{topic_name}"
+                norm = f"{defaults.topic_prefix}{topic_name}"
                 if norm not in seen:
                     normalized.append(norm)
                     seen.add(norm)

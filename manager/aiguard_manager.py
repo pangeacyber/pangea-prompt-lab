@@ -66,6 +66,7 @@ class AIGuardManager:
         self.service = service
         self.endpoint = endpoint
 
+        self.report_any_topic = args.report_any_topic
         self.valid_detectors = defaults.valid_detectors
         self.valid_topics = defaults.valid_topics
 
@@ -77,7 +78,12 @@ class AIGuardManager:
         enabled_detectors_str = args.detectors
         enabled_detectors = [d.strip().lower() for d in enabled_detectors_str.split(",")] if enabled_detectors_str else []
         if "topic" in enabled_detectors:
-            enabled_detectors.remove("topic")  # Remove "topic" if it exists, we will add it later if needed.
+            enabled_detectors.remove("topic")  # Remove "topic" if it exists
+
+        if args.report_any_topic:
+            # If report_any_topic is set, we will report all topics detected, even if not specified.
+            # This means we will not filter out any topics.
+            enabled_detectors.extend([f"{defaults.topic_prefix}{topic}" for topic in self.valid_topics])
 
         invalid: list[str] = []
         self.enabled_detectors, invalid = normalize_topics_and_detectors(
@@ -91,8 +97,12 @@ class AIGuardManager:
                 f"Valid detectors are: {', '.join(self.valid_detectors)}. "
                 f"Valid topics are: {', '.join(self.valid_topics)}.{RESET}"
             )
-            raise ValueError(f"Invalid detectors or topics specified: {', '.join(invalid)}")                
-        self.enabled_topics = [topic_name for topic_name in self.enabled_detectors if topic_name.startswith("topic:")]
+            raise ValueError(f"Invalid detectors or topics specified: {', '.join(invalid)}")
+        
+        # Ensure the internal enabled_topics doesn't have the "topic:" prefix.
+        prefix = defaults.topic_prefix
+        prefix_len = len(prefix)
+        self.enabled_topics = [topic_name[prefix_len:] for topic_name in self.enabled_detectors if topic_name.startswith(prefix)]
 
         # Must have at least one detector enabled
         if not self.enabled_detectors:
@@ -487,9 +497,12 @@ class AIGuardManager:
                         for topic in topics:
                             topic_name = topic.get("topic")
                             if topic_name:
+                                # TODO: Temporarily allow both "self harm and violence" and "self-harm-and-violence"
+                                if topic_name == "self harm and violence":
+                                    topic_name = "self-harm-and-violence"
                                 if topic_name in self.valid_topics:
                                     # Normalize topic name to "topic:<topic-name>" format
-                                    topic_name = f"topic:{topic_name}"
+                                    topic_name = f"{defaults.topic_prefix}{topic_name}"
                                     if topic_name not in labels:
                                         labels.append(topic_name)
                                 else:
@@ -688,6 +701,15 @@ class AIGuardManager:
         return {}
 
     def ai_guard_test(self, test: TestCase):
+
+        enabled_topics = self.enabled_topics or []        
+        ## TODO: TEMP: If the topic name is "self-harm-and-violence"
+        ## We need to replace it with "self harm and violence" for now.
+        ## This is a temporary fix until the API is updated to handle the topic name correctly.
+        if "self-harm-and-violence" in enabled_topics:
+            enabled_topics.remove("self-harm-and-violence")
+            enabled_topics.append("self harm and violence")
+
         data = {"recipe": test.get_recipe(), "messages": test.messages, "debug": self.debug}
 
         if self.enabled_detectors:
@@ -702,15 +724,15 @@ class AIGuardManager:
             
             topic = {
                 "disabled": False,
-                "action": "block" if self.fail_fast else "report",
+                "action": "report" if self.report_any_topic else "block",
                 "threshold": self.topic_threshold,
-                "topics": self.enabled_topics if self.enabled_topics else []
+                "topics": enabled_topics if enabled_topics else []
             }
 
             if "malicious-prompt" in self.enabled_detectors:
                 overrides["prompt_injection"] = prompt_injection
 
-            if self.enabled_topics:
+            if enabled_topics or self.report_any_topic:
                 overrides["topic"] = topic
 
             data["overrides"] = overrides

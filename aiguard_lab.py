@@ -94,6 +94,15 @@ def main():
         ),
     )
     processing_group.add_argument(
+        "--report_any_topic",
+        action="store_true",
+        help=(
+            "Report any topic detection, even if not specified in --detectors.\n"
+            "This will report all detected topics in the response, regardless of\n"
+            "whether they are explicitly requested or not. Default: False."
+        ),
+    )
+    processing_group.add_argument(
         "--topic_threshold",
         type=float,
         default=defaults.topic_threshold,
@@ -101,7 +110,7 @@ def main():
             "Threshold for topic detection confidence. Only applies when using\n"
             f"AI Guard with topics. Default: {defaults.topic_threshold}."
         ),
-    )    
+    )
     processing_group.add_argument(
         "--fail_fast",
         action="store_true",

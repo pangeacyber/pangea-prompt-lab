@@ -21,6 +21,7 @@ valid_topics = [
             "gibberish",
         ]
 valid_topics_str = ", ".join(valid_topics)
+topic_prefix = "topic:"
 
 # Need to be consistent with how the code handles detector names and topic names.
 # Want to allow --detectors to include both detector names and topic names, and to allow
@@ -45,7 +46,7 @@ valid_detectors = [
         ]
 # Add topic detectors prefixed with "topic:" to the valid detectors
 # We also accept just the topic name without "topic:" prefix
-valid_detectors.extend([f"topic:{topic}" for topic in valid_topics])
+valid_detectors.extend([f"{topic_prefix}{topic}" for topic in valid_topics])
 
 valid_detectors_str = ", ".join(valid_detectors)
 

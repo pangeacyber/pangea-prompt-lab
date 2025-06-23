@@ -126,7 +126,7 @@ class EfficacyTracker:
         self,
         test: TestCase,
         detector_not_seen: str,
-        expected_label: str = ""
+        expected_label: str = "benign"
     ):
         """
         TODO: MAY NOT WANT TO DO THIS - COULD BE NOISY (at least not keep every test case)
@@ -188,7 +188,7 @@ class EfficacyTracker:
             self,
             test: TestCase,
             detector_not_seen: str,
-            expected_label: str = "" 
+            expected_label: str
     ):
         """
         Add a test case to the false negatives collection.
@@ -355,7 +355,8 @@ class EfficacyTracker:
 
                 self.add_false_negative(
                     test,
-                    detector_not_seen=expected
+                    detector_not_seen=expected,
+                    expected_label=expected
                 )
         for detected in detected_detectors_labels:
             if detected not in expected_labels:
@@ -369,7 +370,7 @@ class EfficacyTracker:
 
                 self.add_false_positive(
                     test,
-                    expected_label="",
+                    expected_label="benign",
                     detector_seen=detected
                 )
         # No need to check for FN here, as we already checked expected_labels
@@ -388,11 +389,11 @@ class EfficacyTracker:
             if not tp_detected:
                 # true negative: nothing expected and nothing detected
                 tn_detected = True
-                found_tn.add("")  # Assuming benign is the default for TN
+                found_tn.add("benign")  # Assuming benign is the default for TN
                 self.add_true_negative(
                     test,
-                    expected_label="",
-                    detector_not_seen=""
+                    expected_label="benign",
+                    detector_not_seen="benign"
                 )
         return (fp_detected, fn_detected, fp_names, fn_names)
 
