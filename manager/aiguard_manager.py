@@ -27,6 +27,7 @@ from utils.utils import normalize_topics_and_detectors
         
 from api.pangea_api import pangea_post_api, poll_request
 from utils.utils import (
+    remove_topic_prefix,
     apply_synonyms,
     get_duration,
     formatted_json_str,
@@ -93,16 +94,14 @@ class AIGuardManager:
         )
         if invalid:
             print(
-                f"{DARK_RED}Invalid detectors or topics specified: {', '.join(invalid)}. "
-                f"Valid detectors are: {', '.join(self.valid_detectors)}. "
+                f"{DARK_RED}Invalid detectors or topics specified: {', '.join(invalid)}.\n"
+                f"{DARK_YELLOW}Valid detectors are: {', '.join(self.valid_detectors)}.\n"
                 f"Valid topics are: {', '.join(self.valid_topics)}.{RESET}"
             )
             raise ValueError(f"Invalid detectors or topics specified: {', '.join(invalid)}")
         
         # Ensure the internal enabled_topics doesn't have the "topic:" prefix.
-        prefix = defaults.topic_prefix
-        prefix_len = len(prefix)
-        self.enabled_topics = [topic_name[prefix_len:] for topic_name in self.enabled_detectors if topic_name.startswith(prefix)]
+        self.enabled_topics = remove_topic_prefix(self.enabled_detectors)
 
         # Must have at least one detector enabled
         if not self.enabled_detectors:
@@ -405,6 +404,7 @@ class AIGuardManager:
         Update the test labels with the given label if it is not already present.
         This is used to add labels based on detected detectors.
         Assumes that the label has been validated and is a valid detector or topic.
+        TODO: CHECK THIS - Always ensure that a topic in the label is in the "topic:<topic-name>" format.
 
         # TODO: We currently only are tracking malicious-prompt and topics, 
         # so adding labels for other expected detectors might cause issues.
@@ -422,6 +422,10 @@ class AIGuardManager:
             # TODO: TEMP FIX UNTIL API IS UPDATED:
             # Replace self-harm-and-violence with self harm and violence
             label = label.replace("-", " ")
+        # Ensure the label is in the correct format for topics
+        if label in self.valid_topics:
+            # Normalize the topic name to "topic:<topic-name>" format
+            label = f"{defaults.topic_prefix}{label}"
 
         if label not in test.label:
             test.label.append(label)
@@ -602,10 +606,10 @@ class AIGuardManager:
         if fp_detected or fn_detected:            
             index = test.index if hasattr(test, "index") else "N/A"
             if fp_detected:
-                print(f"\t{DARK_RED}Test:{index}:False Positives Detected: {fp_names}{RESET}")
+                print(f"\t{DARK_RED}Test:{index}:False Positives: {fp_names}{RESET}")
             if fn_detected:
-                print(f"\t{DARK_RED}Test:{index}:False Negatives Detected: {fn_names}{RESET}")
-            print(f"\t{DARK_YELLOW}Actual: {actual_detectors_labels} Expected:{expected_detectors_labels}{RESET}")
+                print(f"\t{DARK_RED}Test:{index}:False Negatives: {fn_names}{RESET}")
+            print(f"\t{DARK_YELLOW}Actual Detections: {actual_detectors_labels} Expected:{expected_detectors_labels}{RESET}")
 
             if self.verbose:
                 print(
@@ -701,8 +705,27 @@ class AIGuardManager:
         return {}
 
     def ai_guard_test(self, test: TestCase):
+        """ 
+        Prepare the data for AI Guard API call based on the test case.
+        This includes setting overrides, messages, and recipe. 
+        """
 
-        enabled_topics = self.enabled_topics or []        
+        ## TODO:
+        # If test.enabled_override_detectors, then use those instead of self.enabled_detectors.
+        # Also need to determine the test case's effective topics from test.enabled_override_detectors.
+
+        enabled_topics = self.enabled_topics or []
+        enabled_detectors = self.enabled_detectors or []
+
+        if test.enabled_override_detectors:
+            enabled_detectors = test.enabled_override_detectors
+
+            # Use a set to deduplicate topic-prefixed entries
+            enabled_topics = remove_topic_prefix(list({
+                t for t in enabled_detectors if t.startswith(defaults.topic_prefix)
+            }))
+            
+
         ## TODO: TEMP: If the topic name is "self-harm-and-violence"
         ## We need to replace it with "self harm and violence" for now.
         ## This is a temporary fix until the API is updated to handle the topic name correctly.
@@ -712,31 +735,36 @@ class AIGuardManager:
 
         data = {"recipe": test.get_recipe(), "messages": test.messages, "debug": self.debug}
 
-        if self.enabled_detectors:
+        if enabled_detectors:
             overrides = {
                 "ignore_recipe": True
             }
 
             prompt_injection = {
+                # TODO: How is if test.settings.overrides.prompt_injection, then use action from there.
                 "disabled": False,
                 "action": "block" if self.fail_fast else "report"
             }
             
             topic = {
                 "disabled": False,
+                # TODO: How is if test.settings.overrides.topic, then use action and topic_threshold from there.
                 "action": "report" if self.report_any_topic else "block",
                 "threshold": self.topic_threshold,
                 "topics": enabled_topics if enabled_topics else []
             }
 
-            if "malicious-prompt" in self.enabled_detectors:
+            if "malicious-prompt" in enabled_detectors:
+                # overrides.prompt_injection
                 overrides["prompt_injection"] = prompt_injection
 
             if enabled_topics or self.report_any_topic:
+                # overrides.topic
                 overrides["topic"] = topic
 
             data["overrides"] = overrides
         elif test is not None and test.settings:
+            # TODO: No longer needed?  Especially once TestCase::__init__ does he right thing to load settings and overrides.
             if test.settings.overrides and isinstance(test.settings.overrides, Overrides):
                 data["overrides"] = self._convert_to_dict(test.settings.overrides)
                 if self.debug:
@@ -939,29 +967,35 @@ class AIGuardTests:
                 # Now we have labels that are the union of expected_detectors_labels and the labels
                 # from the test case, with synonyms applied.
 
-                # Then we need to filter the labels to only those that are in the enabled detectors from the
-                # test case + the command line --detectors arg: 
-                # effective_enabled_detectors = test_case_enabled_detectors + command_line_enabled_detectors
-                # Then we can use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
-                # are valid and only those that are for enabled and supported detectors.
-
-                # Test case enabled detectors are settings.overrides if they exist, otherwise from the 
-                # settings.overrides inherited from the global settings if they exist.
-                test_case_enabled_detectors = []
+                # If the test case has settings.overrides use those
+                #    (and cache the enabled detectors from the settings.overrides in test.enabled_override_detectors)
+                # else if there are global settings.overrides, then use those
+                # else use cmd_line_enabled_detectors.
+                # If not using the test case's settings.overrides, then update the self.aig.enabled_topics
+                cmd_line_enabled_detectors: list[str] = self.aig.enabled_detectors
+                effective_enabled_detectors: list[str] = cmd_line_enabled_detectors
+                test_case_enabled_detectors: list[str] = []
+                global_settings_enabled_detectors: list[str] = []
                 if testcase.settings and getattr(testcase.settings, "overrides", None):
                     test_case_enabled_detectors = testcase.settings.overrides.get_enabled_detector_labels() or []
+                    # TODO: Check this attribute in ai_guard_test and use it for enabled detectors/topics if present.
+                    # TODO: Move setting of testcase.enabled_override_detectors into TestCase::__init__ 
+                    testcase.enabled_override_detectors = test_case_enabled_detectors
+                    effective_enabled_detectors = test_case_enabled_detectors
                 elif self.settings and getattr(self.settings, "overrides", None):
-                    test_case_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
+                    global_settings_enabled_detectors = self.settings.overrides.get_enabled_detector_labels() or []
+                    if global_settings_enabled_detectors:
+                        effective_enabled_detectors = global_settings_enabled_detectors
 
-                # Now want to add any enabled detectors from the command line args.            
-                cmd_line_enabled_detectors = self.aig.enabled_detectors
-
-                effective_enabled_detectors = set(test_case_enabled_detectors + cmd_line_enabled_detectors)
-
-                testcase.index = len(self.tests) + 1  # Set index based on current length of tests
+                if not test_case_enabled_detectors: # Only if we're not overriding for a single test case
+                    self.aig.enabled_topics = remove_topic_prefix(list({
+                        t for t in effective_enabled_detectors if t.startswith(defaults.topic_prefix)
+                    }))
+                    
                 # Use TestCase::ensure_valid_labels(effective_enabled_detectors) to ensure that the labels
                 # are valid and only those that are for enabled and supported detectors.
                 testcase.ensure_valid_labels(effective_enabled_detectors)
+                testcase.index = len(self.tests) + 1  # Set index based on current length of tests
 
             self.tests.append(testcase)
 
