@@ -10,6 +10,13 @@ from utils.colors import DARK_RED, DARK_YELLOW, GREEN, RESET
 from defaults import defaults
 
 
+def remove_topic_prefix(labels: list[str]) -> list[str]:
+    """
+    Remove the 'topic:' prefix from a list of labels.
+    If a label starts with 'topic:', it will be stripped of that prefix.
+    """
+    return [label[len(defaults.topic_prefix):] if label.startswith(defaults.topic_prefix) else label for label in labels]
+
 # Helper function to normalize topics and detectors
 def normalize_topics_and_detectors(
     labels: list[str],
@@ -28,8 +35,8 @@ def normalize_topics_and_detectors(
     normalized = []
     invalid = []
 
-    detectors_set = set(valid_detectors)
-    topics_set = set(valid_topics)
+    valid_detectors_set = set(valid_detectors)
+    valid_topics_set = set(valid_topics)
 
     for label in labels:
         lbl = label.strip().lower()
@@ -37,7 +44,7 @@ def normalize_topics_and_detectors(
         if lbl.startswith(defaults.topic_prefix):
             prefix_len = len(defaults.topic_prefix)
             topic_name = lbl[prefix_len:]
-            if topic_name in topics_set:
+            if topic_name in valid_topics_set:
                 norm = f"{defaults.topic_prefix}{topic_name}"
                 if norm not in seen:
                     normalized.append(norm)
@@ -45,13 +52,13 @@ def normalize_topics_and_detectors(
             else:
                 invalid.append(label)
         # Raw topic name
-        elif lbl in topics_set:
-            norm = f"topic:{lbl}"
+        elif lbl in valid_topics_set:
+            norm = f"{defaults.topic_prefix}{lbl}"
             if norm not in seen:
                 normalized.append(norm)
                 seen.add(norm)
         # Detector name
-        elif lbl in detectors_set:
+        elif lbl in valid_detectors_set:
             if lbl not in seen:
                 normalized.append(lbl)
                 seen.add(lbl)

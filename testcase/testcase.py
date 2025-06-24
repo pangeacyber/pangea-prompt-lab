@@ -219,6 +219,7 @@ class TestCase:
     settings: Optional[Settings] = None
     messages: List[Dict[str, str]] = field(default_factory=list)
     expected_detectors: ExpectedDetectors = field(default_factory=ExpectedDetectors)
+    enabled_override_detectors: List[str] = field(default_factory=list)  # Internal helper: lists detectors enabled through settings.overrides if present)
     label: Optional[List[str]] = field(default_factory=list)  # Optional labels for the test case
     # Fields that will only be used to track the detectors seen during the test case execution
     # This is not part of the expected output, but is useful for runtime checks
@@ -235,6 +236,7 @@ class TestCase:
         expected_detectors: Optional[dict] = None,
     ):
         self.messages = messages
+        self.enabled_override_detectors = [] # Always set in AIGuardTests:load_from_file() for now.
         self.label = label if label is not None else []
 
         # Ensure messages is a list of dictionaries
@@ -247,6 +249,7 @@ class TestCase:
             raise ValueError("All labels must be strings.")
         # Optional Settings object that can hold recipe, system_prompt, overrides, and log_fields.
         if settings is not None:
+            # TODO: Do the settings.overrides etc. work here instead of in AIGuardTests:load_from_file()
             self.settings = settings
         if expected_detectors:
             ed = ExpectedDetectors()
