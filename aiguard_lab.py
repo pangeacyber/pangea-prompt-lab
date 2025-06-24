@@ -140,8 +140,8 @@ def main():
             "Comma separated list of labels indicating a benign prompt.\n"
             + "Default:\n  " 
             + defaults.benign_labels_str.replace(', ', ',\n  ') + "\n"
-            + "Test cases with any of these labels expect the malicious-prompt\n"
-            + "detector NOT to return a detection (FP if it does).\n"
+            + "Test cases with any of these labels expect no detections \n"
+            + "from any detector (FP if it does).\n"
             + "Must not overlap with --malicious_prompt_labels."
         ),
     )
@@ -219,12 +219,12 @@ def main():
     group_tp_tn.add_argument(
         "--assume_tps",
         action="store_true",
-        help="Assume all prompts in a .txt file are true positives",
+        help="Assume all inputs are true positives",
     )
     group_tp_tn.add_argument(
         "--assume_tns",
         action="store_true",
-        help="Assume all prompts in a .txt file are true negatives",
+        help="Assume all inputs are true negatives (benign)",
     )
 
     performance_group = parser.add_argument_group("Performance")
