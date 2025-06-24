@@ -4,6 +4,7 @@
 import time
 import json
 import threading
+from collections import deque
 from datetime import datetime
 from typing import List, Dict
 from utils.colors import DARK_RED, DARK_YELLOW, GREEN, RESET
@@ -73,7 +74,7 @@ def apply_synonyms(labels, synonyms, replacement):
         replacement if label in synonyms else label
         for label in labels
         if isinstance(label, str)
-    ))            
+    ))
 
 
 def formatted_json_str(json_data: dict) -> str:
@@ -152,24 +153,50 @@ def unescape_and_unquote(value):
     return value
 
 
-def rate_limited(max_per_second):
+# Shared state: one bucket per requested RPS value
+_RATE_LIMITER_STATE: dict[float, dict[str, object]] = {}
+
+def rate_limited(max_per_second: float):
     """
-    Decorator to limit the rate of function calls.
+    Thread‑safe decorator that enforces a *global* requests‑per‑second cap.
+
+    Any function wrapped with the same ``max_per_second`` value shares a
+    single token bucket across every thread and module.
+
+    Example
+    -------
+    @rate_limited(10)      # <= 10 calls per second in total
+    def api_call(...):
+        ...
     """
-    min_interval = 1.0 / float(max_per_second)
-    lock = threading.Lock()
-    last_time_called = [0.0]
+    if max_per_second <= 0:
+        return lambda f: f  # no limit requested
 
-    def decorate(func):
-        def rate_limited_function(*args, **kwargs):
-            with lock:
-                elapsed = time.perf_counter() - last_time_called[0]
-                left_to_wait = min_interval - elapsed
-                if left_to_wait > 0:
-                    time.sleep(left_to_wait)
-                last_time_called[0] = time.perf_counter()
-                return func(*args, **kwargs)
+    window = 1.0  # sliding window in seconds
+    state = _RATE_LIMITER_STATE.setdefault(
+        max_per_second,
+        {"lock": threading.Lock(), "calls": deque()}
+    )
+    lock: threading.Lock = state["lock"]
+    call_times: deque = state["calls"]
 
-        return rate_limited_function
+    def decorator(fn):
+        import functools
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            while True:
+                with lock:
+                    now = time.perf_counter()
+                    # Drop timestamps older than the window
+                    while call_times and now - call_times[0] >= window:
+                        call_times.popleft()
 
-    return decorate
+                    if len(call_times) < max_per_second:
+                        call_times.append(now)
+                        break
+                    sleep_for = window - (now - call_times[0])
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
