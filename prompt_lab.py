@@ -17,6 +17,7 @@ from tzlocal import get_localzone
 from collections import Counter, defaultdict
 from threading import Semaphore
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -265,7 +266,9 @@ class PromptDetectionManager:
         analyzers_list=None,
         use_ai_guard=False,
         topics=None,        
-        threshold=None, 
+        threshold=None,
+        classify=False,
+        classify_out_file=None
     ):
         self.args = args # Should switch to using this to make it easier to pass around
         self.rps = rps
@@ -283,6 +286,12 @@ class PromptDetectionManager:
         self.threshold = threshold
         self.prompt_guard_token = prompt_guard_token
         self.ai_guard_token = ai_guard_token
+        self.classify = classify
+        self.classify_out_file = classify_out_file
+        if self.classify:
+            self._classify_lock = threading.Lock()
+            if self.classify_out_file:
+                open(self.classify_out_file, "w").close()
 
         self.tp_count = 0
         self.tn_count = 0
@@ -360,6 +369,14 @@ class PromptDetectionManager:
 
     def add_false_positive(self, prompt, detector, labels):
         self.false_positives.append(PromptDetection(prompt, detector, labels))
+
+    def _write_classification(self, prompt, classifications):
+        if not (self.classify and classifications):
+            return
+        with self._classify_lock:
+            with open(self.classify_out_file, "a", encoding="utf-8") as jf:
+                json.dump({"prompt": prompt, "classifications": classifications}, jf)
+                jf.write("\n")
 
     def print_report_header(self):
         print(f"\n{BRIGHT_GREEN}Prompt Guard Efficacy Report{RESET}")
@@ -648,6 +665,9 @@ class PromptDetectionManager:
         detected_with_details = defaultdict(list)
         result = response.json().get("result", {})
 
+        # record classification
+        self._write_classification(prompt, result.get("classifications"))
+
         if self.use_ai_guard:
             detected, detectors, detected_with_details = self.get_ai_guard_detected_details(response)
             if not detected:
@@ -718,10 +738,14 @@ class PromptDetectionManager:
     def prompt_guard_service(self, messages):
         """Submit a single prompt to the Prompt Guard service using the full messages array."""
         endpoint = "/v1/guard"
+
+        data = {"messages": messages}
+
         if self.analyzers_list:
-            data = {"messages": messages, "analyzers": self.analyzers_list}
-        else:
-            data = {"messages": messages}
+            data["analyzers"] = self.analyzers_list
+
+        if self.classify:
+            data["classify"] = True
 
         response = pangea_post_api(endpoint, data)
         if response.status_code == 202:
@@ -1159,8 +1183,20 @@ def main():
             "Only applies when using AI Guard with topics. Default: 0.5."
         ),
     )
+    parser.add_argument("--classify", action="store_true",
+                        help="Enable classify=true and write JSONL output.")
+    parser.add_argument("--classify_out_jsonl", type=str, default=None,
+                        help="Path for classification JSONL output file.")
 
     args = parser.parse_args()
+
+    if args.classify and not args.classify_out_jsonl:
+        if args.input_file:
+            base_name = os.path.splitext(os.path.basename(args.input_file))[0]
+            args.classify_out_jsonl = f"{base_name}.classifications.jsonl"
+        else:
+            args.classify_out_jsonl = "classifications_output.jsonl"
+        print(f"[INFO] Classification results will be written to: {args.classify_out_jsonl}")
 
     # If listing analyzers, just fetch and exit
     if args.list_analyzers:
@@ -1230,6 +1266,8 @@ def main():
         use_ai_guard=args.use_ai_guard,
         topics=topics, 
         threshold=args.threshold,
+        classify=args.classify,
+        classify_out_file=args.classify_out_jsonl
     )
 
     process_all_prompts(args, pg)

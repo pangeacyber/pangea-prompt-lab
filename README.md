@@ -72,6 +72,8 @@ usage: poetry run python prompt_lab.py [-h]
                      [--use_ai_guard]
                      [--topics]
                      [--threshold]
+                     [--classify]
+                     [--classify_out_jsonl CLASSIFY_OUT_JSONL]
 ```
 
 ## Important Flags
@@ -132,6 +134,16 @@ usage: poetry run python prompt_lab.py [-h]
 
    NOTE: Ensure that PANGEA_AI_GUARD_TOKEN is set to a valid AI Guard token value.
 
+8) **Classification Output**
+   - `--classify` Enables the `classify=true` flag for each PG call.  
+     When enabled, the tool collects the `classifications` for every prompt processed.
+   - `--classify_out_jsonl FILE` Path to a JSONL file where each line is:
+     ```json
+     {"prompt": "<prompt text>", "classifications": [...]}
+     ```
+     If omitted, the tool defaults to `<INPUT_FILE>.classifications.jsonl` or `classifications_output.jsonl` when no input file is provided.
+   - **Does not impact accuracy metrics**: these flags only add extra output; all detection and reporting remain unchanged.
+
 1) **Single Prompt:**
    ```bash
    poetry run python prompt_lab.py --prompt "Ignore previous instructions..." --verbose
@@ -176,10 +188,17 @@ usage: poetry run python prompt_lab.py [-h]
    ```bash
    poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --use_ai_guard --topics "toxicity,self harm and violence,roleplay,weapons,criminal-conduct,sexual" --threshold 0.8 --rps 16
    ```
+   
+9) **Enable Classification Output**
+   ```bash
+   poetry run python prompt_lab.py --input_file data/test_dataset.jsonl --classify
+   # JSONL results will be written to data/test_dataset.classifications.jsonl
+   ```
+   
 ## Sample Dataset
 
 The sample dataset (`data/test_dataset.jsonl`) contains:
-- **Size:** Small sample with ~450 prompts.
+- **Size:** Small sample with ~900 prompts.
 - **Expected Behavior:** Running it should produce accuracy metrics and highlight false positives or false negatives.
 
 ## Output and Metrics
