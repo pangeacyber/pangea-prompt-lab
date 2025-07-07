@@ -265,7 +265,7 @@ class PromptDetectionManager:
         assume_tns=False,
         analyzers_list=None,
         use_ai_guard=False,
-        topics=None,        
+        topics=None,
         threshold=None,
         classify=False,
         classify_out_file=None
@@ -683,7 +683,7 @@ class PromptDetectionManager:
                 if len(temp_detectors) == 0:
                     temp_detectors = ["None"]
                 detectors = temp_detectors
-        else:        
+        else:
             detected = result.get("detected", False)
             detectors.append(result.get("analyzer", "None"))
 
@@ -711,7 +711,7 @@ class PromptDetectionManager:
                     self.label_stats[label]["FP"] += 1
             else:
                 self.add_tn()
- 
+
 
     def prompt_guard_analyzers(self):
         """Fetch a list of detector names from the Prompt Guard service."""
@@ -760,11 +760,11 @@ class PromptDetectionManager:
         if response.status_code != 200:
             self.add_error_response(response)
         return response
-    
+
     def ai_guard_service(
-            self, 
-            messages, 
-            topics=None, 
+            self,
+            messages,
+            topics=None,
             threshold=None
             ):
         """
@@ -830,7 +830,7 @@ class PromptDetectionManager:
         if response.status_code != 200:
             self.add_error_response(response)
         return response
-    
+
 def output_final_reports(args, pg, fns_out_csv, fps_out_csv):
     if args.print_fps and len(pg.false_positives) > 0:
         print("\nFalse Positives:")
@@ -1051,11 +1051,11 @@ def process_all_prompts(args, pg):
                 futures = []
                 for index, (prompt, is_injection, _) in enumerate(prompts):
                     futures.append(executor.submit(
-                        process_prompt, 
+                        process_prompt,
                         [{"role": "user", "content": prompt}],  # messages array
-                        is_injection, 
+                        is_injection,
                         [],     # labels
-                        index, 
+                        index,
                         total_rows))
                 for future in as_completed(futures):
                     pass
@@ -1083,6 +1083,8 @@ def process_all_prompts(args, pg):
 
 def main():
     global base_url
+    start_time = time.time()
+
     parser = argparse.ArgumentParser(
         description=(
             "Process a prompt with Prompt Guard API or read prompts from "
@@ -1228,7 +1230,7 @@ def main():
                     f"{DARK_RED}Warning: --use_ai_guard is set, but base_url does not contain 'ai-guard'. "
                     "Ensure you are using the correct AI Guard endpoint.{RESET}"
                 )
-        
+
         if analyzers_list:
             print(
                 f"{DARK_RED}Warning: --analyzers is ignored when using --use_ai_guard. "
@@ -1264,7 +1266,7 @@ def main():
         assume_tns=args.assume_tns,
         analyzers_list=analyzers_list,
         use_ai_guard=args.use_ai_guard,
-        topics=topics, 
+        topics=topics,
         threshold=args.threshold,
         classify=args.classify,
         classify_out_file=args.classify_out_jsonl
@@ -1272,6 +1274,8 @@ def main():
 
     process_all_prompts(args, pg)
 
+    end_time = time.time()
+    print(f"\nTotal duration: {end_time - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()
